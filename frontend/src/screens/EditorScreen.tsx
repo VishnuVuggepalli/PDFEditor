@@ -151,13 +151,11 @@ export function EditorScreen({ docId, navigate }: Props) {
   /* ---- in-place text edit (mupdf engine) ---- */
   const onContentEdited = useCallback(
     async (bytes: Uint8Array) => {
-      try {
-        const doc = await replaceContent(docId, bytes);
-        invalidateDoc();
-        push({ type: 'success', title: `Text edit saved as v${doc.headVersion}` });
-      } catch {
-        // API client already raised an error toast; nothing was persisted.
-      }
+      // On failure the API client raises the error toast and the rejection
+      // propagates to the edit overlay, which stays open for retry.
+      const doc = await replaceContent(docId, bytes);
+      invalidateDoc();
+      push({ type: 'success', title: `Text edit saved as v${doc.headVersion}` });
     },
     [docId, invalidateDoc, push],
   );
@@ -445,7 +443,7 @@ export function EditorScreen({ docId, navigate }: Props) {
             onRemoveAnnot={store.removeAnnot}
             onRemoveStamp={store.removeStamp}
             onSign={(page, at, vp) => setSigning({ page, at, vp })}
-            onContentEdited={(bytes) => void onContentEdited(bytes)}
+            onContentEdited={onContentEdited}
           />
         ) : (
           <div className="viewer-wrap">

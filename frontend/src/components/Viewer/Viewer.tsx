@@ -40,7 +40,7 @@ interface Props {
   onRemoveStamp: (id: string) => void;
   onSign: (page: number, at: [number, number], vp: ViewportParams) => void;
   /** in-place text edit result (mupdf engine only) */
-  onContentEdited?: (bytes: Uint8Array) => void;
+  onContentEdited?: (bytes: Uint8Array) => Promise<void>;
 }
 
 export function Viewer(props: Props) {
