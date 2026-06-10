@@ -28,6 +28,13 @@ func TestAnnotateAllTypes(t *testing.T) {
 		{Type: document.AnnInk, Page: 2, Rect: [4]float64{50, 200, 250, 300}, Color: "#00aa00",
 			Paths: [][]float64{{60, 210, 120, 280, 240, 220}}},
 		{Type: document.AnnHighlight, Page: 1, Rect: [4]float64{70, 650, 200, 670}, Color: "#88ff88", Opacity: 0.4},
+		{Type: document.AnnText, Page: 1, Rect: [4]float64{70, 560, 300, 600}, Color: "#111827",
+			Contents: "typed text", FontSize: 14},
+		{Type: document.AnnText, Page: 2, Rect: [4]float64{70, 560, 300, 620}, Color: "#ff0000",
+			Contents: "boxed text", FontSize: 24, Bg: "#ffffcc", BorderWidth: 1},
+		{Type: document.AnnCircle, Page: 2, Rect: [4]float64{260, 50, 380, 150}, Color: "#2563eb", BorderWidth: 3},
+		{Type: document.AnnLine, Page: 1, Rect: [4]float64{60, 490, 300, 530}, Color: "#16a34a",
+			Line: []float64{65, 495, 295, 525}, BorderWidth: 2},
 	}
 
 	out, err := e.Annotate(src, annots)

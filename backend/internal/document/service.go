@@ -43,6 +43,9 @@ type Engine interface {
 	ExtractPages(pdf []byte, pages []int) ([]byte, error)
 	// Annotate embeds the given (pre-validated) annotations into the PDF.
 	Annotate(pdf []byte, annots []Annotation) ([]byte, error)
+	// StampImage draws a PNG/JPEG image stamp onto one page, fitted into
+	// rect ([llx,lly,urx,ury], PDF points) with aspect ratio preserved.
+	StampImage(pdf []byte, page int, rect [4]float64, img []byte) ([]byte, error)
 	// FormFields lists AcroForm fields.
 	FormFields(pdf []byte) ([]FormField, error)
 	// FillForm sets field values keyed by field ID or name.

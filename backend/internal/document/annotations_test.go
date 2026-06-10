@@ -50,6 +50,60 @@ func TestAnnotateValidation(t *testing.T) {
 			a.Type = AnnInk
 			a.Paths = [][]float64{{10, 10, 20}}
 		}), true},
+		{"valid text", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "hello"
+			a.FontSize = 14
+		}), false},
+		{"valid text with bg and border", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "hello"
+			a.FontSize = 8
+			a.Bg = "#ffffff"
+			a.BorderWidth = 1.5
+		}), false},
+		{"text empty contents", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.FontSize = 14
+		}), true},
+		{"text font too small", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 7
+		}), true},
+		{"text font too large", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 73
+		}), true},
+		{"text bad bg", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 12
+			a.Bg = "white"
+		}), true},
+		{"valid circle", mod(func(a *Annotation) { a.Type = AnnCircle; a.BorderWidth = 2 }), false},
+		{"circle border too wide", mod(func(a *Annotation) {
+			a.Type = AnnCircle
+			a.BorderWidth = 13
+		}), true},
+		{"negative border width", mod(func(a *Annotation) {
+			a.Type = AnnSquare
+			a.BorderWidth = -1
+		}), true},
+		{"valid line", mod(func(a *Annotation) {
+			a.Type = AnnLine
+			a.Line = []float64{10, 10, 100, 30}
+		}), false},
+		{"line missing endpoints", mod(func(a *Annotation) { a.Type = AnnLine }), true},
+		{"line wrong coord count", mod(func(a *Annotation) {
+			a.Type = AnnLine
+			a.Line = []float64{10, 10, 100}
+		}), true},
+		{"line identical endpoints", mod(func(a *Annotation) {
+			a.Type = AnnLine
+			a.Line = []float64{10, 10, 10, 10}
+		}), true},
 	}
 
 	for _, tt := range tests {

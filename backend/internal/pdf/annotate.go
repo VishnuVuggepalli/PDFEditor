@@ -30,6 +30,56 @@ func parseHexColor(s string) (*color.SimpleColor, error) {
 	}, nil
 }
 
+// freeTextRenderer wraps a FreeTextAnnotation to write a complete /DA
+// (font + size + color). pdfcpu v0.13's FreeText RenderDict emits only the
+// color operator (the Tf part is an upstream TODO), which leaves viewers
+// without a usable default appearance.
+type freeTextRenderer struct {
+	model.FreeTextAnnotation
+	da string
+}
+
+// RenderDict renders the wrapped annotation, then replaces /DA.
+func (r freeTextRenderer) RenderDict(xRefTable *model.XRefTable, pageIndRef *types.IndirectRef) (types.Dict, error) {
+	d, err := r.FreeTextAnnotation.RenderDict(xRefTable, pageIndRef)
+	if err != nil {
+		return nil, err
+	}
+	d["DA"] = types.StringLiteral(r.da)
+	return d, nil
+}
+
+// strokeWidth returns the annotation's border width, defaulting to 1.
+func strokeWidth(a document.Annotation) float64 {
+	if a.BorderWidth > 0 {
+		return a.BorderWidth
+	}
+	return 1
+}
+
+// freeText builds the renderer for a "text" annotation: Helvetica (core-14,
+// no embedding), left-aligned, optional background color and border.
+func freeText(a document.Annotation, fontCol *color.SimpleColor, ca *float64, rect *types.Rectangle) (model.AnnotationRenderer, error) {
+	var bg *color.SimpleColor
+	if a.Bg != "" {
+		c, err := parseHexColor(a.Bg)
+		if err != nil {
+			return nil, err
+		}
+		bg = c
+	}
+	ft := model.NewFreeTextAnnotation(
+		*rect, 0, a.Contents, "", "", 0, bg,
+		"", nil, ca, "", "",
+		a.Contents, types.AlignLeft, "Helvetica", a.FontSize, fontCol,
+		"", nil, nil, nil,
+		0, 0, 0, 0,
+		a.BorderWidth, model.BSSolid, false, 0)
+	da := fmt.Sprintf("/Helv %d Tf %.4f %.4f %.4f rg",
+		a.FontSize, fontCol.R, fontCol.G, fontCol.B)
+	return freeTextRenderer{FreeTextAnnotation: ft, da: da}, nil
+}
+
 // renderer builds the pdfcpu annotation for one domain annotation.
 func renderer(a document.Annotation) (model.AnnotationRenderer, error) {
 	col, err := parseHexColor(a.Color)
@@ -60,7 +110,7 @@ func renderer(a document.Annotation) (model.AnnotationRenderer, error) {
 		return model.NewSquareAnnotation(
 			*rect, 0, a.Contents, "", "", 0, col,
 			"", nil, ca, "", "",
-			nil, 0, 0, 0, 0, 1, model.BSSolid, false, 0), nil
+			nil, 0, 0, 0, 0, strokeWidth(a), model.BSSolid, false, 0), nil
 
 	case document.AnnInk:
 		ink := make([]model.InkPath, len(a.Paths))
@@ -71,6 +121,24 @@ func renderer(a document.Annotation) (model.AnnotationRenderer, error) {
 			*rect, 0, a.Contents, "", "", 0, col,
 			"", nil, ca, "", "",
 			ink, 1, model.BSSolid), nil
+
+	case document.AnnText:
+		return freeText(a, col, ca, rect)
+
+	case document.AnnCircle:
+		return model.NewCircleAnnotation(
+			*rect, 0, a.Contents, "", "", 0, col,
+			"", nil, ca, "", "",
+			nil, 0, 0, 0, 0, strokeWidth(a), model.BSSolid, false, 0), nil
+
+	case document.AnnLine:
+		p1 := types.Point{X: a.Line[0], Y: a.Line[1]}
+		p2 := types.Point{X: a.Line[2], Y: a.Line[3]}
+		return model.NewLineAnnotation(
+			*rect, 0, a.Contents, "", "", 0, col,
+			"", nil, ca, "", "",
+			p1, p2, nil, nil, 0, 0, 0, nil, nil,
+			false, false, 0, 0, nil, strokeWidth(a), model.BSSolid), nil
 
 	default:
 		return nil, fmt.Errorf("unknown annotation type %q", a.Type)

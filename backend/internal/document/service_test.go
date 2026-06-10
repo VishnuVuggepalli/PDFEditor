@@ -126,6 +126,10 @@ func (f *fakeEngine) Annotate(pdf []byte, annots []Annotation) ([]byte, error) {
 	return f.mark(pdf, fmt.Sprintf("annotate%d", len(annots))), nil
 }
 
+func (f *fakeEngine) StampImage(pdf []byte, page int, rect [4]float64, img []byte) ([]byte, error) {
+	return f.mark(pdf, fmt.Sprintf("stamp_p%d", page)), nil
+}
+
 func (f *fakeEngine) FormFields(pdf []byte) ([]FormField, error) {
 	return []FormField{{ID: "fullName", Type: "text"}}, nil
 }
