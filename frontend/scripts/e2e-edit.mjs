@@ -1,6 +1,11 @@
-/** End-to-end in-place text edit: upload fixture -> open editor (mupdf
- * engine) -> double-click first text line -> accept prompt -> assert new
- * version stored server-side and replacement text present in head bytes.
+/** End-to-end in-place text edit (worker engine + inline overlay):
+ *  1. upload fixture -> open editor (mupdf engine) -> double-click first
+ *     text line -> overlay prefilled -> type replacement -> Enter ->
+ *     new version stored server-side, replacement present in head bytes.
+ *  2. Escape cancels the overlay without creating a version.
+ *  3. responsiveness: open a content-heavy doc and assert the main thread
+ *     never blocks > 200ms while the pages render (heartbeat probe; the
+ *     longtask PerformanceObserver is not delivered in headless Chromium).
  *
  * Prereqs:
  *   backend:  PORT=8801 DATA_DIR=$(mktemp -d) go run ./cmd/server
@@ -14,6 +19,7 @@ import * as mupdf from 'mupdf';
 const BACKEND = process.env.E2E_BACKEND ?? 'http://localhost:8801';
 const APP = process.env.E2E_APP ?? 'http://localhost:5299';
 const REPLACEMENT = 'Edited via E2E';
+const MAX_BLOCK_MS = 200;
 
 function findChromium() {
   try {
@@ -32,29 +38,41 @@ function findChromium() {
   throw new Error('no chromium found');
 }
 
-// 1. upload the fixture
-const pdfBytes = fs.readFileSync(new URL('../public/fixtures/sample.pdf', import.meta.url));
-const form = new FormData();
-form.append('file', new Blob([pdfBytes], { type: 'application/pdf' }), 'e2e.pdf');
-const up = await fetch(`${BACKEND}/api/v1/documents`, { method: 'POST', body: form });
-const upJson = await up.json();
-if (!upJson.success) throw new Error('upload failed: ' + JSON.stringify(upJson));
-const id = upJson.data.id;
+async function upload(fixture, name) {
+  const bytes = fs.readFileSync(new URL(`../public/fixtures/${fixture}`, import.meta.url));
+  const form = new FormData();
+  form.append('file', new Blob([bytes], { type: 'application/pdf' }), name);
+  const up = await fetch(`${BACKEND}/api/v1/documents`, { method: 'POST', body: form });
+  const json = await up.json();
+  if (!json.success) throw new Error('upload failed: ' + JSON.stringify(json));
+  return json.data.id;
+}
+
+const id = await upload('sample.pdf', 'e2e.pdf');
 console.log('uploaded doc', id);
 
-// 2. drive the editor
 const browser = await chromium.launch({ executablePath: findChromium(), args: ['--no-sandbox'] });
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.error('[pageerror]', e.message));
-page.on('dialog', (d) => {
-  console.log('prompt default:', JSON.stringify(d.defaultValue()));
-  void d.accept(REPLACEMENT);
+// Main-thread responsiveness probe: gaps between MessageChannel ticks.
+await page.addInitScript(() => {
+  window.__blocks = [];
+  const chan = new MessageChannel();
+  let last = performance.now();
+  chan.port1.onmessage = () => {
+    const now = performance.now();
+    if (now - last > 50) window.__blocks.push(Math.round(now - last));
+    last = now;
+    chan.port2.postMessage(0);
+  };
+  chan.port2.postMessage(0);
 });
+
+/* ---- 1. inline edit flow ---- */
 await page.goto(`${APP}/#/doc/${id}`);
 const canvas = page.locator('.pdf-canvas').first();
 await canvas.waitFor({ state: 'visible', timeout: 20000 });
-// let the first render land
-await page.waitForTimeout(1500);
+await page.waitForTimeout(1500); // let the first render land
 
 // First fixture line spans fitz x 72..380, y 96..128 on a 595x842 page.
 const box = await canvas.boundingBox();
@@ -64,12 +82,33 @@ const sy = box.height / 842;
 // handler lives on the parent sheet div and receives the bubbled event.
 await canvas.dblclick({ position: { x: 226 * sx, y: 112 * sy }, force: true });
 
-// 3. wait for the success toast
+const input = page.locator('.inline-edit .ie-input');
+await input.waitFor({ state: 'visible', timeout: 10000 });
+const prefilled = await input.textContent();
+console.log('overlay prefilled:', JSON.stringify(prefilled));
+if (!prefilled || !prefilled.includes('PDFEditor test fixture')) {
+  throw new Error('overlay not prefilled with the line text');
+}
+
+await input.press('ControlOrMeta+a');
+await input.pressSequentially(REPLACEMENT);
+await input.press('Enter');
+
 await page.getByText(/Text edit saved as v2/).waitFor({ timeout: 20000 });
 console.log('toast: Text edit saved as v2');
-await browser.close();
+await page.locator('.inline-edit').waitFor({ state: 'detached', timeout: 10000 });
+console.log('overlay closed after commit');
 
-// 4. verify server state
+/* ---- 2. Escape cancels without a new version ---- */
+await page.waitForTimeout(1500); // reloaded head version renders
+await canvas.dblclick({ position: { x: 226 * sx, y: 112 * sy }, force: true });
+await input.waitFor({ state: 'visible', timeout: 10000 });
+await input.pressSequentially('discard me');
+await input.press('Escape');
+await page.locator('.inline-edit').waitFor({ state: 'detached', timeout: 5000 });
+console.log('overlay closed on Escape');
+
+/* ---- verify server state ---- */
 const meta = await (await fetch(`${BACKEND}/api/v1/documents/${id}/meta`)).json();
 const doc = meta.data.document;
 const last = doc.versions[doc.versions.length - 1];
@@ -82,4 +121,35 @@ const text = reopened.loadPage(0).toStructuredText().asText();
 console.log('replacement visible in head bytes:', text.includes(REPLACEMENT));
 console.log('original line removed:', !text.includes('PDFEditor test fixture page 1'));
 if (!text.includes(REPLACEMENT)) throw new Error('replacement missing from saved PDF');
+if (text.includes('discard me')) throw new Error('escaped edit leaked into the PDF');
+
+/* ---- 3. responsiveness while rendering a heavy document ---- */
+const heavyId = await upload('heavy.pdf', 'e2e-heavy.pdf');
+console.log('uploaded heavy doc', heavyId);
+const heavyPage = await browser.newPage();
+heavyPage.on('pageerror', (e) => console.error('[pageerror]', e.message));
+await heavyPage.addInitScript(() => {
+  window.__blocks = [];
+  const chan = new MessageChannel();
+  let last = performance.now();
+  chan.port1.onmessage = () => {
+    const now = performance.now();
+    if (now - last > 50) window.__blocks.push(Math.round(now - last));
+    last = now;
+    chan.port2.postMessage(0);
+  };
+  chan.port2.postMessage(0);
+});
+await heavyPage.goto(`${APP}/#/doc/${heavyId}`);
+await heavyPage.locator('.pdf-canvas').nth(2).waitFor({ state: 'visible', timeout: 30000 });
+await heavyPage.waitForTimeout(2500); // all three pages render + text layers
+const blocks = await heavyPage.evaluate(() => window.__blocks);
+console.log('main-thread blocks >50ms during heavy render:', JSON.stringify(blocks));
+const worst = blocks.length ? Math.max(...blocks) : 0;
+if (worst > MAX_BLOCK_MS) {
+  throw new Error(`main thread blocked ${worst}ms (> ${MAX_BLOCK_MS}ms) during render`);
+}
+console.log(`UI stayed responsive (worst block ${worst}ms <= ${MAX_BLOCK_MS}ms)`);
+
+await browser.close();
 console.log('E2E PASS');
