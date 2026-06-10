@@ -58,7 +58,8 @@ paginated lists).
 | `POST /api/v1/documents/{id}/pages/ops` | In-place page operations: rotate, reorder, delete (sequential, validated) |
 | `POST /api/v1/documents/merge` | Combine multiple documents into a new document |
 | `POST /api/v1/documents/{id}/split` | Extract page ranges into new documents (source untouched) |
-| `POST /api/v1/documents/{id}/annotations` | Persist highlights/draw/shapes/stamps into the PDF |
+| `POST /api/v1/documents/{id}/annotations` | Persist highlights/notes/draw/shapes/text into the PDF |
+| `POST /api/v1/documents/{id}/stamp` | Place a visual signature image on one page (multipart: `image` PNG/JPEG ≤5 MB, `page`, `rect` JSON `[llx,lly,urx,ury]` in PDF points; fitted into rect, aspect preserved; ops summary `signature stamp pN`) |
 | `POST /api/v1/documents/{id}/form` | Fill AcroForm fields, optional flatten |
 | `GET  /api/v1/documents/{id}/versions` | List version history |
 | `GET  /api/v1/documents/{id}/versions/{n}` | Download a specific version (read-only) |
@@ -156,3 +157,17 @@ new version. Frontend state is never mutated in place.
 - Digital signatures (cryptographic)
 - OCR of scanned documents
 - Collaboration / sharing
+
+### Why cryptographic signing is deferred
+
+The Sign tool ships with two *visual* modes only: a drawn signature (stored
+as an ink annotation) and an uploaded signature image (stamped server-side
+via pdfcpu's image watermark API). Neither is a cryptographic signature.
+pdfcpu (our only PDF engine in v1) can **validate** existing digital
+signatures but cannot **create** them — producing a real PAdES/PKCS#7
+signature requires certificate management, a signing engine (e.g.
+digitorus/pdfsign or a mupdf-backed phase), trust-store decisions, and a
+UX for key material that is far beyond a personal editor's v1. The Sign
+menu shows a disabled "Certificates & digital signing" item so the gap is
+explicit rather than surprising; revisit when the engine swap (mupdf) or a
+dedicated signing library lands.

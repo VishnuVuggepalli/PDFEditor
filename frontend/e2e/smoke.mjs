@@ -4,8 +4,37 @@
  * Run:     node e2e/smoke.mjs
  */
 import { chromium } from 'playwright';
+import { writeFileSync } from 'node:fs';
 
 const BASE = process.env.BASE_URL || 'http://localhost:5199';
+
+// 1x1 red PNG for the image-signature stamp flow.
+const SIG_PNG = '/tmp/pdfeditor-e2e-sig.png';
+writeFileSync(
+  SIG_PNG,
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+);
+
+/** Assert the saved head PDF contains a FreeText annotation with `text`
+ * (uses pdf.js in Node — the canvas paints it in-app, so the DOM can't be
+ * asserted directly). */
+async function assertFreeTextSaved(docId, text) {
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const res = await fetch(`${BASE}/api/v1/documents/${encodeURIComponent(docId)}`);
+  if (!res.ok) throw new Error(`download head pdf failed: HTTP ${res.status}`);
+  const doc = await getDocument({ data: new Uint8Array(await res.arrayBuffer()) }).promise;
+  for (let n = 1; n <= doc.numPages; n++) {
+    const anns = await (await doc.getPage(n)).getAnnotations();
+    if (anns.some((a) => a.subtype === 'FreeText' && (a.contentsObj?.str ?? '').includes(text))) {
+      await doc.destroy();
+      return;
+    }
+  }
+  throw new Error(`saved PDF has no FreeText annotation containing "${text}"`);
+}
 const FIXTURE = new URL('../../backend/testdata/sample.pdf', import.meta.url).pathname;
 const FORM_FIXTURE = new URL('../../backend/testdata/form.pdf', import.meta.url).pathname;
 const SHOTS = process.env.SHOT_DIR || '/tmp/pdfeditor-e2e';
@@ -68,6 +97,62 @@ async function main() {
   await page.click('.btn.primary:has-text("Save")');
   await page.waitForSelector('text=/Saved as v\\d+/');
   step('save posts queue and reports new version');
+
+  // 6a. text annotation: place, type, save, reopen, verify persisted
+  const docId = decodeURIComponent(page.url().match(/#\/doc\/(.+)$/)[1]);
+  await page.click('button[aria-label="Text"]');
+  const sheet2 = await page.locator('.pdf-sheet').first().boundingBox();
+  await page.mouse.click(sheet2.x + 160, sheet2.y + 220);
+  await page.waitForSelector('.an-text-edit');
+  await page.keyboard.type('Approved by smoke');
+  await page.click('button[aria-label="Select"]'); // blur commits the box
+  await page.waitForSelector('.an-text');
+  await page.click('.btn.primary:has-text("Save")');
+  await page.waitForSelector('text=Saved as v4');
+  step('text annotation queued and saved');
+
+  await page.click('.crumb'); // back to library
+  await page.waitForSelector('.dropzone');
+  await page.locator('.doc-card', { hasText: 'sample.pdf' }).first().click();
+  await page.waitForSelector('.pdf-sheet canvas.pdf-canvas');
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${SHOTS}/03a-text-reopened.png` });
+  await assertFreeTextSaved(docId, 'Approved by smoke');
+  step('reopened document carries the saved FreeText annotation');
+
+  // 6b. drawn signature: pad → place → save (ink annotation)
+  await page.click('button[aria-label="Sign"]');
+  const sheet3 = await page.locator('.pdf-sheet').first().boundingBox();
+  await page.mouse.click(sheet3.x + 250, sheet3.y + 320);
+  await page.waitForSelector('.sig-modal');
+  const pad = await page.locator('.sig-draw canvas').boundingBox();
+  await page.mouse.move(pad.x + 40, pad.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(pad.x + 160, pad.y + 50, { steps: 8 });
+  await page.mouse.move(pad.x + 280, pad.y + 100, { steps: 8 });
+  await page.mouse.up();
+  await page.click('.sig-modal .btn.primary:has-text("Place signature")');
+  await page.waitForSelector('.an-svg path');
+  await page.click('.btn.primary:has-text("Save")');
+  await page.waitForSelector('text=Saved as v5');
+  step('drawn signature placed as ink annotation and saved');
+
+  // 6c. image signature: upload → place → save → version list shows stamp
+  await page.click('button[aria-label="Sign"]');
+  const sheet4 = await page.locator('.pdf-sheet').first().boundingBox();
+  await page.mouse.click(sheet4.x + 320, sheet4.y + 420);
+  await page.waitForSelector('.sig-modal');
+  await page.click('.sig-tabs button:has-text("Image")');
+  await page.setInputFiles('.sig-drop input[type=file]', SIG_PNG);
+  await page.waitForSelector('.sig-img-preview img');
+  await page.click('.sig-modal .btn.primary:has-text("Place signature")');
+  await page.waitForSelector('.an-stamp img');
+  await page.screenshot({ path: `${SHOTS}/03b-pending-sign.png` });
+  await page.click('.btn.primary:has-text("Save")');
+  await page.waitForSelector('text=Saved as v6');
+  await page.click('.rp-tab:has-text("Versions")');
+  await page.waitForSelector('text=signature stamp p1');
+  step('image signature stamped; version list shows "signature stamp p1"');
 
   // 7. versions tab: view old version read-only, then restore
   await page.click('.rp-tab:has-text("Versions")');
