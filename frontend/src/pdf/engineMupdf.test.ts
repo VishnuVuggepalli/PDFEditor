@@ -6,7 +6,7 @@
  * fitz y-down boxes). */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadPdfMupdf } from './engineMupdf';
-import { canEditText } from './engineApi';
+import { canEditImages, canEditText } from './engineApi';
 import {
   MupdfRpc,
   type ClientMessage,
@@ -29,6 +29,18 @@ const LINES = [
 ];
 
 const SAVED = [1, 2, 3, 4];
+
+/** One image paint: fitz box [100,192,300,342] on the 842pt page is the
+ * PDF-space (y-up) rect [100,500,300,650]. */
+const IMAGES = [
+  {
+    index: 0,
+    fitzBox: [100, 192, 300, 342],
+    transform: [200, 0, 0, 150, 100, 192],
+    width: 40,
+    height: 30,
+  },
+];
 
 /** Emulates the worker: answers each request with a canned result. With
  * `hold = true` replies queue up until flush() — used to test superseded
@@ -94,6 +106,10 @@ class FakeWorkerPort implements RpcPort {
       case 'textLines':
         return { lines: LINES };
       case 'replaceText':
+        return { bytes: new Uint8Array(SAVED).buffer };
+      case 'imageList':
+        return { images: IMAGES };
+      case 'imageEdit':
         return { bytes: new Uint8Array(SAVED).buffer };
     }
   }
@@ -306,6 +322,55 @@ describe('text editing', () => {
     await new Promise((r) => setTimeout(r, 0)); // let invalidation settle
     await page.text();
     expect(port.count('textLines')).toBe(before + 1);
+  });
+});
+
+describe('image editing', () => {
+  it('finds the image under a PDF-space (y-up) point and caches the list', async () => {
+    const pdf = await load();
+    if (!canEditImages(pdf)) throw new Error('expected image edit capability');
+    const sel = await pdf.imageAt(1, 200, 600);
+    expect(sel).toEqual({ page: 1, index: 0, bbox: [100, 500, 300, 650], width: 40, height: 30 });
+    expect(await pdf.imageAt(1, 50, 50)).toBeNull();
+    expect(port.count('imageList')).toBe(1); // second hit-test reused the cache
+  });
+
+  it('applies a delete via the worker and invalidates the image cache', async () => {
+    const pdf = await load();
+    if (!canEditImages(pdf)) throw new Error('expected image edit capability');
+    const sel = (await pdf.imageAt(1, 200, 600))!;
+    const bytes = await pdf.applyImageEdit({ kind: 'delete', sel });
+    expect(Array.from(bytes)).toEqual(SAVED);
+    const req = port.requests.find((r) => r.op === 'imageEdit') as { page: number; edit: unknown };
+    expect(req.page).toBe(1);
+    expect(req.edit).toEqual({ kind: 'delete', index: 0 });
+
+    // cache invalidated: the next hit-test re-fetches the image list
+    await new Promise((r) => setTimeout(r, 0)); // let invalidation settle
+    await pdf.imageAt(1, 200, 600);
+    expect(port.count('imageList')).toBe(2);
+  });
+
+  it('transfers replacement bytes and forwards the fitted target rect', async () => {
+    const pdf = await load();
+    if (!canEditImages(pdf)) throw new Error('expected image edit capability');
+    const sel = (await pdf.imageAt(1, 200, 600))!;
+    const payload = new Uint8Array([7, 7, 7, 7]);
+    await pdf.applyImageEdit({ kind: 'replace', sel, bytes: payload, rect: sel.bbox });
+    const i = port.requests.findIndex((r) => r.op === 'imageEdit');
+    const req = port.requests[i] as { edit: { kind: string; bytes: ArrayBuffer; rect: number[] } };
+    expect(req.edit.kind).toBe('replace');
+    expect(req.edit.rect).toEqual([100, 500, 300, 650]);
+    expect(port.transfers[i]).toEqual([req.edit.bytes]); // bytes moved, not copied
+  });
+
+  it('sends the new rect for a move/resize (transform) edit', async () => {
+    const pdf = await load();
+    if (!canEditImages(pdf)) throw new Error('expected image edit capability');
+    const sel = (await pdf.imageAt(1, 200, 600))!;
+    await pdf.applyImageEdit({ kind: 'transform', sel, rect: [10, 20, 110, 95] });
+    const req = port.requests.find((r) => r.op === 'imageEdit') as { edit: unknown };
+    expect(req.edit).toEqual({ kind: 'transform', index: 0, rect: [10, 20, 110, 95] });
   });
 });
 

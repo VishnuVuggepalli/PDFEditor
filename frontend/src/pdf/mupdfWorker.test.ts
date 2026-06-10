@@ -85,6 +85,15 @@ const STEXT = {
   ],
 };
 
+/** One fake image paint reported by the 'preserve-images' stext walk:
+ * bbox [100,192,300,342] / CTM [200,0,0,150,100,192] in fitz space (the
+ * PDF-space rect [100,500,300,650] on an 842pt page), intrinsic 40x30. */
+const WALK_IMAGE = {
+  bbox: [100, 192, 300, 342] as [number, number, number, number],
+  transform: [200, 0, 0, 150, 100, 192] as [number, number, number, number, number, number],
+  image: { getWidth: () => 40, getHeight: () => 30 },
+};
+
 function makeFakes() {
   const calls: Record<string, unknown[][]> = {};
   const track = (name: string, ...args: unknown[]) => {
@@ -115,7 +124,16 @@ function makeFakes() {
     getObject: () => pageObj,
     toStructuredText: (opts?: string) => {
       track('toStructuredText', opts);
-      return { asJSON: () => JSON.stringify(STEXT), destroy: () => track('stext.destroy') };
+      return {
+        asJSON: () => JSON.stringify(STEXT),
+        walk: (walker: {
+          onImageBlock?: (bbox: unknown, transform: unknown, image: unknown) => void;
+        }) => {
+          track('stext.walk');
+          walker.onImageBlock?.(WALK_IMAGE.bbox, WALK_IMAGE.transform, WALK_IMAGE.image);
+        },
+        destroy: () => track('stext.destroy'),
+      };
     },
     toPixmap: (...args: unknown[]) => {
       track('toPixmap', ...args);
@@ -147,6 +165,10 @@ function makeFakes() {
       track('addStream', data);
       return new FakeObj('stream');
     },
+    addImage: (image: unknown) => {
+      track('addImage', image);
+      return new FakeObj('dict');
+    },
     newDictionary: () => new FakeObj('dict'),
     newArray: () => new FakeObj('array'),
     saveToBuffer: (opts: unknown) => {
@@ -172,7 +194,26 @@ vi.mock('mupdf', () => ({
       this.name = name;
     }
   },
-  PDFPage: { REDACT_IMAGE_NONE: 0, REDACT_LINE_ART_NONE: 0, REDACT_TEXT_REMOVE: 0 },
+  /** replacement images decode to 20x10 (different aspect than WALK_IMAGE) */
+  Image: class {
+    data: Uint8Array;
+    constructor(data: Uint8Array) {
+      this.data = data;
+    }
+    getWidth() {
+      return 20;
+    }
+    getHeight() {
+      return 10;
+    }
+  },
+  PDFPage: {
+    REDACT_IMAGE_NONE: 0,
+    REDACT_IMAGE_REMOVE: 1,
+    REDACT_LINE_ART_NONE: 0,
+    REDACT_TEXT_REMOVE: 0,
+    REDACT_TEXT_NONE: 1,
+  },
 }));
 
 /* ---- worker harness: duck-typed global in jsdom ---- */
@@ -348,6 +389,100 @@ describe('replaceText', () => {
     await request({ op: 'replaceText', docId, span: SPAN, newText: '   ' });
     expect(fakes.current!.calls['applyRedactions']).toHaveLength(1);
     expect(fakes.current!.calls['addStream']).toBeUndefined();
+  });
+});
+
+describe('imageList', () => {
+  it('locates image paints via the preserve-images stext walk', async () => {
+    const docId = await openDoc();
+    const reply = await request({ op: 'imageList', docId, page: 1 });
+    expect(reply.msg).toMatchObject({
+      kind: 'result',
+      result: {
+        images: [
+          {
+            index: 0,
+            fitzBox: [100, 192, 300, 342],
+            transform: [200, 0, 0, 150, 100, 192],
+            width: 40,
+            height: 30,
+          },
+        ],
+      },
+    });
+    expect(fakes.current!.calls['toStructuredText']).toEqual([['preserve-images']]);
+    expect(fakes.current!.calls['stext.destroy']).toHaveLength(1);
+  });
+});
+
+describe('imageEdit', () => {
+  it('delete: redacts the image region (images only) and saves', async () => {
+    const docId = await openDoc();
+    const reply = await request({ op: 'imageEdit', docId, page: 1, edit: { kind: 'delete', index: 0 } });
+    expect(reply.msg.kind).toBe('result');
+    const bytes = (reply.msg as { result: { bytes: ArrayBuffer } }).result.bytes;
+    expect(Array.from(new Uint8Array(bytes))).toEqual([1, 2, 3, 4]);
+    expect(reply.transfer).toEqual([bytes]);
+
+    const calls = fakes.current!.calls;
+    expect(calls['createAnnotation']).toEqual([['Redact']]);
+    expect(calls['annot.setRect']).toEqual([[[100, 192, 300, 342]]]);
+    // REDACT_IMAGE_REMOVE=1, LINE_ART_NONE=0, TEXT_NONE=1: text untouched
+    expect(calls['applyRedactions']).toEqual([[false, 1, 0, 1]]);
+    expect(calls['addImage']).toBeUndefined();
+    expect(calls['addStream']).toBeUndefined();
+    expect(calls['saveToBuffer']).toEqual([['garbage,compress']]);
+  });
+
+  it('replace: aspect-fits the new image into the rect and registers it', async () => {
+    const docId = await openDoc();
+    const payload = new Uint8Array([9, 9, 9]).buffer;
+    const reply = await request({
+      op: 'imageEdit',
+      docId,
+      page: 1,
+      // 20x10 replacement into the 200x150 rect -> 200x100 centered
+      edit: { kind: 'replace', index: 0, bytes: payload, rect: [100, 500, 300, 650] },
+    });
+    expect(reply.msg.kind).toBe('result');
+
+    const calls = fakes.current!.calls;
+    expect(calls['applyRedactions']).toEqual([[false, 1, 0, 1]]);
+    // the replacement image (mock mupdf.Image) was added, not the original
+    expect(calls['addImage']).toHaveLength(1);
+    expect((calls['addImage'][0][0] as { data: Uint8Array }).data).toBeInstanceOf(Uint8Array);
+    const fragment = calls['addStream'][0][0] as string;
+    expect(fragment).toBe('\nq 200.00 0 0 100.00 100.00 525.00 cm /FzImg Do Q\n');
+    // image XObject registered in the page resources
+    const xobjs = fakes.current!.pageObj.get('Resources').get('XObject');
+    expect(xobjs.get('FzImg').isNull()).toBe(false);
+    // content stream became [original, extra]
+    expect(fakes.current!.pageObj.get('Contents').isArray()).toBe(true);
+  });
+
+  it('transform: redraws the original image into the new rect', async () => {
+    const docId = await openDoc();
+    const reply = await request({
+      op: 'imageEdit',
+      docId,
+      page: 1,
+      edit: { kind: 'transform', index: 0, rect: [50, 100, 250, 200] },
+    });
+    expect(reply.msg.kind).toBe('result');
+
+    const calls = fakes.current!.calls;
+    // the walked original image object is re-added as-is
+    expect(calls['addImage']).toEqual([[WALK_IMAGE.image]]);
+    const fragment = calls['addStream'][0][0] as string;
+    expect(fragment).toBe('\nq 200.00 0 0 100.00 50.00 100.00 cm /FzImg Do Q\n');
+  });
+
+  it('answers with an error when the image index does not exist', async () => {
+    const docId = await openDoc();
+    const reply = await request({ op: 'imageEdit', docId, page: 1, edit: { kind: 'delete', index: 5 } });
+    expect(reply.msg).toMatchObject({ kind: 'error' });
+    expect((reply.msg as { message: string }).message).toContain('image 5 not found');
+    expect(fakes.current!.calls['applyRedactions']).toBeUndefined();
   });
 });
 

@@ -4,13 +4,25 @@
  * only does DOM work (canvas blits, text-layer spans) and pure geometry, so
  * the main thread never blocks on rasterization. */
 
-import type { PageHandle, PdfEditCapable, TextSpanInfo } from './engineApi';
+import type {
+  ImageEditRequest,
+  ImageSelection,
+  PageHandle,
+  PdfEditCapable,
+  PdfImageEditCapable,
+  TextSpanInfo,
+} from './engineApi';
 import type { PdfRect, ViewportParams } from './coords';
 import { viewportSize } from './coords';
+import { imageAtPoint } from './imageEdit';
 import {
   MupdfCancelledError,
+  type ImageEditResult,
+  type ImageEditSpec,
+  type ImageListResult,
   type MupdfRpc,
   type OpenResult,
+  type PageImageInfo,
   type PageInfoResult,
   type RenderResult,
   type ReplaceTextResult,
@@ -29,6 +41,7 @@ class MupdfPage implements PageHandle {
   private readonly rpc: MupdfRpc;
   private readonly docId: number;
   private linesCache: Promise<StextLine[]> | null = null;
+  private imagesCache: Promise<PageImageInfo[]> | null = null;
   /** In-flight render request id per target canvas. Page handles are cached
    * and shared (viewer + thumbnails render concurrently), so a single slot
    * would let one consumer cancel another's render — same semantics as the
@@ -129,14 +142,38 @@ class MupdfPage implements PageHandle {
     };
   }
 
-  /** Drop cached structured text (after an edit mutated the page). */
+  private images(): Promise<PageImageInfo[]> {
+    this.imagesCache ??= this.rpc
+      .call<ImageListResult>({ op: 'imageList', docId: this.docId, page: this.n })
+      .then((r) => r.images);
+    return this.imagesCache;
+  }
+
+  /** Find the topmost image paint under a PDF user-space point (y-up). */
+  async imageSelAt(x: number, y: number): Promise<ImageSelection | null> {
+    const [fx, fy] = transformPoint(this.info.pageTransform, x, y);
+    const hit = imageAtPoint(await this.images(), fx, fy);
+    if (!hit) return null;
+    const pdfBox = transformRect(matInvert(this.info.pageTransform), hit.fitzBox);
+    return {
+      page: this.n,
+      index: hit.index,
+      bbox: pdfBox as PdfRect,
+      width: hit.width,
+      height: hit.height,
+    };
+  }
+
+  /** Drop cached structured text/images (after an edit mutated the page). */
   invalidate(): void {
     this.linesCache = null;
+    this.imagesCache = null;
   }
 }
 
-class MupdfPdf implements PdfEditCapable {
+class MupdfPdf implements PdfEditCapable, PdfImageEditCapable {
   readonly editsText = true as const;
+  readonly editsImages = true as const;
   readonly pageCount: number;
   private readonly rpc: MupdfRpc;
   private readonly docId: number;
@@ -189,6 +226,39 @@ class MupdfPdf implements PdfEditCapable {
     }
     // The page content changed inside the worker; drop stale text caches.
     const cached = this.pages.get(span.page);
+    if (cached) void cached.then((p) => p.invalidate()).catch(() => undefined);
+    return new Uint8Array(res.bytes);
+  }
+
+  async imageAt(page: number, x: number, y: number): Promise<ImageSelection | null> {
+    return (await this.pageImpl(page)).imageSelAt(x, y);
+  }
+
+  /** Apply an image edit (delete / replace / move-resize) in the worker;
+   * returns the complete edited PDF bytes for upload. Replacement bytes
+   * transfer into the worker when they own their whole buffer. */
+  async applyImageEdit(edit: ImageEditRequest): Promise<Uint8Array> {
+    let spec: ImageEditSpec;
+    const transfer: Transferable[] = [];
+    if (edit.kind === 'replace') {
+      const whole =
+        edit.bytes.byteOffset === 0 && edit.bytes.byteLength === edit.bytes.buffer.byteLength;
+      const bytes = (
+        whole ? edit.bytes.buffer : edit.bytes.slice().buffer
+      ) as ArrayBuffer;
+      transfer.push(bytes);
+      spec = { kind: 'replace', index: edit.sel.index, bytes, rect: edit.rect };
+    } else if (edit.kind === 'transform') {
+      spec = { kind: 'transform', index: edit.sel.index, rect: edit.rect };
+    } else {
+      spec = { kind: 'delete', index: edit.sel.index };
+    }
+    const res = await this.rpc.call<ImageEditResult>(
+      { op: 'imageEdit', docId: this.docId, page: edit.sel.page, edit: spec },
+      transfer,
+    );
+    // The page content changed inside the worker; drop stale caches.
+    const cached = this.pages.get(edit.sel.page);
     if (cached) void cached.then((p) => p.invalidate()).catch(() => undefined);
     return new Uint8Array(res.bytes);
   }

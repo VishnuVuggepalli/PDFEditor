@@ -63,3 +63,40 @@ export interface PdfEditCapable extends PdfHandle {
 export function canEditText(pdf: PdfHandle): pdf is PdfEditCapable {
   return (pdf as Partial<PdfEditCapable>).editsText === true;
 }
+
+/** One image paint selected on a page (mupdf engine only). */
+export interface ImageSelection {
+  /** 1-based page number */
+  page: number;
+  /** 0-based paint-order index of the image on its page */
+  index: number;
+  /** axis-aligned bbox [llx,lly,urx,ury] in PDF points (coords.ts space) */
+  bbox: PdfRect;
+  /** intrinsic pixel dimensions of the embedded image */
+  width: number;
+  height: number;
+}
+
+/** An image edit to apply in the worker. Rects are PDF points (y-up);
+ * 'replace' aspect-fits the new image into the rect, 'transform' redraws
+ * the original image into the (axis-aligned) rect. */
+export type ImageEditRequest =
+  | { kind: 'delete'; sel: ImageSelection }
+  | { kind: 'replace'; sel: ImageSelection; bytes: Uint8Array; rect: PdfRect }
+  | { kind: 'transform'; sel: ImageSelection; rect: PdfRect };
+
+/** Optional in-place image-edit capability. Implemented by the mupdf
+ * engine; absent from the pdf.js engine. */
+export interface PdfImageEditCapable extends PdfHandle {
+  readonly editsImages: true;
+  /** Find the topmost image under a PDF-space point (y-up), or null. */
+  imageAt(page: number, x: number, y: number): Promise<ImageSelection | null>;
+  /** Apply an image edit; returns the full edited PDF bytes. The handle
+   * should be reloaded afterwards. */
+  applyImageEdit(edit: ImageEditRequest): Promise<Uint8Array>;
+}
+
+/** Type guard: does this handle support in-place image editing? */
+export function canEditImages(pdf: PdfHandle): pdf is PdfImageEditCapable {
+  return (pdf as Partial<PdfImageEditCapable>).editsImages === true;
+}

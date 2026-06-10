@@ -27,6 +27,29 @@ export interface StextLine {
   font: StextFont;
 }
 
+/* ---- page images (in-place image edit) ---- */
+
+/** One image paint located on a page (fitz display space, y down). */
+export interface PageImageInfo {
+  /** 0-based position in the page's paint order */
+  index: number;
+  /** axis-aligned bbox [x0,y0,x1,y1] of the painted image */
+  fitzBox: [number, number, number, number];
+  /** full CTM mapping the image unit square to fitz display space */
+  transform: Mat;
+  /** intrinsic pixel dimensions of the embedded image */
+  width: number;
+  height: number;
+}
+
+/** An in-place image edit. `index` identifies the image by paint order
+ * (matching PageImageInfo.index); rects are [llx,lly,urx,ury] in PDF
+ * user-space points (y up), the space the insertion fragment draws in. */
+export type ImageEditSpec =
+  | { kind: 'delete'; index: number }
+  | { kind: 'replace'; index: number; bytes: ArrayBuffer; rect: [number, number, number, number] }
+  | { kind: 'transform'; index: number; rect: [number, number, number, number] };
+
 /* ---- requests ---- */
 
 export type MupdfRequest =
@@ -35,7 +58,9 @@ export type MupdfRequest =
   | { op: 'pageInfo'; docId: number; page: number }
   | { op: 'render'; docId: number; page: number; scale: number; extraRotation: number }
   | { op: 'textLines'; docId: number; page: number }
-  | { op: 'replaceText'; docId: number; span: TextSpanInfo; newText: string };
+  | { op: 'replaceText'; docId: number; span: TextSpanInfo; newText: string }
+  | { op: 'imageList'; docId: number; page: number }
+  | { op: 'imageEdit'; docId: number; page: number; edit: ImageEditSpec };
 
 /* ---- results ---- */
 
@@ -72,6 +97,16 @@ export interface ReplaceTextResult {
   /** font decision applied to the replacement text (null when the edit
    * only deleted text) */
   font: { strategy: 'embedded' | 'base14'; name: string } | null;
+}
+
+export interface ImageListResult {
+  /** image paints on the page, in paint order */
+  images: PageImageInfo[];
+}
+
+export interface ImageEditResult {
+  /** complete edited PDF (transferred) */
+  bytes: ArrayBuffer;
 }
 
 /* ---- envelopes ---- */

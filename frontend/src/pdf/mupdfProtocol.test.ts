@@ -118,6 +118,42 @@ describe('transfer bookkeeping', () => {
     void rpc.call({ op: 'close', docId: 1 });
     expect(port.posted[0].transfer).toEqual([]);
   });
+
+  it('transfers replacement image bytes with an imageEdit request', async () => {
+    const { port, rpc } = setup();
+    const bytes = new ArrayBuffer(32);
+    const { id, promise } = rpc.request<{ bytes: ArrayBuffer }>(
+      {
+        op: 'imageEdit',
+        docId: 1,
+        page: 2,
+        edit: { kind: 'replace', index: 0, bytes, rect: [10, 20, 110, 95] },
+      },
+      [bytes],
+    );
+    expect(port.posted[0].transfer).toEqual([bytes]);
+    const req = port.posted[0].msg;
+    if (req.kind === 'request' && req.req.op === 'imageEdit') {
+      expect(req.req.edit).toMatchObject({ kind: 'replace', index: 0 });
+    } else {
+      throw new Error('expected an imageEdit request envelope');
+    }
+    const saved = new ArrayBuffer(8);
+    port.reply({ kind: 'result', id, result: { bytes: saved } });
+    await expect(promise).resolves.toEqual({ bytes: saved });
+  });
+
+  it('correlates imageList results like any other request', async () => {
+    const { port, rpc } = setup();
+    const { id, promise } = rpc.request<{ images: unknown[] }>({
+      op: 'imageList',
+      docId: 1,
+      page: 1,
+    });
+    expect(port.requests()).toEqual([{ id, op: 'imageList' }]);
+    port.reply({ kind: 'result', id, result: { images: [] } });
+    await expect(promise).resolves.toEqual({ images: [] });
+  });
 });
 
 describe('error propagation', () => {

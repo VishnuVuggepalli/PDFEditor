@@ -10,6 +10,7 @@
 import type * as MU from 'mupdf';
 import type { ClientMessage, MupdfRequest, WorkerMessage } from './mupdfProtocol';
 import { replaceTextInPage } from './mupdfEdit';
+import { applyImageEdit, readPageImages } from './mupdfImageEdit';
 import { readPageInfo, readTextLines, renderPageRgba } from './mupdfPageOps';
 
 type Mupdf = typeof MU;
@@ -130,6 +131,18 @@ async function handle(req: MupdfRequest): Promise<Handled> {
         req.newText,
       );
       return { result: { bytes: bytes.buffer, font }, transfer: [bytes.buffer] };
+    }
+
+    case 'imageList': {
+      const page = getPage(getDoc(req.docId), req.page);
+      return { result: { images: readPageImages(page) }, transfer: [] };
+    }
+
+    case 'imageEdit': {
+      const mu = mupdfSync();
+      const entry = getDoc(req.docId);
+      const bytes = applyImageEdit(mu, entry.doc, getPage(entry, req.page), req.edit);
+      return { result: { bytes: bytes.buffer }, transfer: [bytes.buffer] };
     }
   }
 }
