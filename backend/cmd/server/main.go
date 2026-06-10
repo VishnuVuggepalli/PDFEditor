@@ -35,7 +35,7 @@ func run() error {
 		return err
 	}
 
-	st, err := store.NewFSStore(cfg.DataDir)
+	st, err := store.NewFSStore(cfg.DataDir, store.WithMaxVersions(cfg.MaxVersionsPerDoc))
 	if err != nil {
 		return err
 	}

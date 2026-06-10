@@ -9,6 +9,10 @@ services:
       PORT: "8000"
       DATA_DIR: /app/data
       MAX_UPLOAD_MB: "50"
+      # Version retention: keep at most N versions per document. v1 (the
+      # original upload) and the current head always survive; survivors keep
+      # their numbers, so histories may have gaps. 0 = unlimited.
+      MAX_VERSIONS_PER_DOC: "20"
       # CORS allowlist; comma-separated. Defaults inside the binary to the
       # nginx frontend (:8880) and the Vite dev server (:5199).
       ALLOWED_ORIGINS: "http://localhost:8880,http://localhost:5199"

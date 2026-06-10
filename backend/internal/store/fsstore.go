@@ -5,8 +5,14 @@
 //
 //	{dataDir}/documents/{uuid}/
 //	├── meta.json   application metadata, written atomically
-//	├── v1.pdf      original upload — never modified
-//	└── vN.pdf      one file per immutable version
+//	├── v1.pdf      original upload — never modified, never pruned
+//	├── vN.pdf      one file per immutable version
+//	└── thumbs/     cached page thumbnails (v{N}-p{page}-w{width}.png)
+//
+// Retention: when constructed with WithMaxVersions(n), AddVersion prunes the
+// oldest versions beyond n after each successful append. v1 and the head
+// version always survive, and surviving versions keep their numbers, so
+// histories may have gaps (e.g. v1, v17..v37).
 package store
 
 import (
@@ -30,20 +36,34 @@ import (
 // FSStore implements document.Store on the local filesystem with an
 // in-memory index rebuilt at startup.
 type FSStore struct {
-	root string // {dataDir}/documents
+	root        string // {dataDir}/documents
+	maxVersions int    // keep-last-N retention policy; 0 = unlimited
 
 	mu    sync.RWMutex
 	index map[string]*document.Document
 }
 
+// Option configures an FSStore at construction time.
+type Option func(*FSStore)
+
+// WithMaxVersions sets the keep-last-N retention policy applied on every
+// AddVersion. n <= 0 means unlimited (no pruning). Regardless of n, v1 (the
+// original upload) and the current head version are never pruned.
+func WithMaxVersions(n int) Option {
+	return func(s *FSStore) { s.maxVersions = n }
+}
+
 // NewFSStore creates the layout under dataDir if needed and rebuilds the
 // in-memory index by walking existing meta.json files.
-func NewFSStore(dataDir string) (*FSStore, error) {
+func NewFSStore(dataDir string, opts ...Option) (*FSStore, error) {
 	root := filepath.Join(dataDir, "documents")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("create data dir %s: %w", root, err)
 	}
 	s := &FSStore{root: root, index: make(map[string]*document.Document)}
+	for _, opt := range opts {
+		opt(s)
+	}
 	if err := s.rebuildIndex(); err != nil {
 		return nil, fmt.Errorf("rebuild index: %w", err)
 	}
@@ -197,7 +217,13 @@ func (s *FSStore) VersionBytes(ctx context.Context, id string, n int) ([]byte, e
 	return b, nil
 }
 
-// AddVersion appends pdf as the new head version.
+// AddVersion appends pdf as the new head version, then applies the
+// keep-last-N retention policy (see WithMaxVersions) under the same write
+// lock. Survivors keep their version numbers, so histories may have gaps.
+//
+// meta.json (append + prune in one atomic rewrite) is committed before any
+// pruned file is removed, so a crash can leave an orphaned vK.pdf at worst —
+// never metadata pointing at a missing file.
 func (s *FSStore) AddVersion(ctx context.Context, id string, pdf []byte, ops string) (*document.Document, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,10 +242,17 @@ func (s *FSStore) AddVersion(ctx context.Context, id string, pdf []byte, ops str
 	next := copyDoc(cur)
 	next.HeadVersion = n
 	next.Versions = append(next.Versions, newVersion(n, pdf, ops))
+
+	var pruned []int
+	next.Versions, pruned = prunePlan(next.Versions, n, s.maxVersions)
 	if err := s.writeMetaAtomic(next); err != nil {
 		return nil, err
 	}
 	s.index[id] = next
+
+	// Metadata is committed; file removal failures leave only orphans, so
+	// they are logged rather than surfaced.
+	s.removePrunedVersionFiles(id, pruned)
 	return copyDoc(next), nil
 }
 

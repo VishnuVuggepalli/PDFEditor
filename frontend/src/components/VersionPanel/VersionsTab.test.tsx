@@ -43,4 +43,29 @@ describe('VersionsTab', () => {
     );
     expect(screen.getByText('viewing')).toBeInTheDocument();
   });
+
+  // Retention pruning leaves gaps in version numbers (e.g. v1, v17, v18);
+  // the panel must render and restore from actual entries, never assume
+  // contiguous 1..head numbering.
+  it('handles gapped version histories from retention pruning', () => {
+    const gapped: Version[] = [
+      { n: 1, createdAt: '2026-06-01T10:00:00Z', ops: 'upload', size: 2048, sha256: 'a' },
+      { n: 17, createdAt: '2026-06-08T10:00:00Z', ops: 'rotate p1 90°', size: 1900, sha256: 'q' },
+      { n: 18, createdAt: '2026-06-09T10:00:00Z', ops: 'highlight p2', size: 2100, sha256: 'r' },
+    ];
+    const onRestore = vi.fn();
+    render(
+      <VersionsTab versions={gapped} headVersion={18} viewing={null} onView={vi.fn()} onRestore={onRestore} />,
+    );
+    const names = screen.getAllByText(/^v\d+$/).map((el) => el.textContent);
+    expect(names).toEqual(['v18', 'v17', 'v1']);
+    // Head tag follows the headVersion number, not array position assumptions.
+    expect(within(screen.getByText('v18').closest('.vcard')! as HTMLElement).getByText('current')).toBeInTheDocument();
+
+    // Restoring a gapped survivor passes its real version number.
+    fireEvent.click(screen.getAllByText('Restore')[0]); // v17 row (newest non-head)
+    expect(screen.getByText('Restore v17?')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Restore'));
+    expect(onRestore).toHaveBeenCalledWith(17);
+  });
 });
