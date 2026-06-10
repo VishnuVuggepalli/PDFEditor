@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- Dev-only engine verification + perf harness (not part of the app build).
+     Open via the Vite dev server: http://localhost:5299/perf.html -->
+<html>
+  <body>
+    <h1>PDF engine harness</h1>
+    <script type="module">
+      import { loadPdf } from '/src/pdf/engine';
+      import { loadPdfMupdf } from '/src/pdf/engineMupdf';
+      import { canEditText } from '/src/pdf/engineApi';
+
+      const url = '/fixtures/sample.pdf';
+
+      async function measure(name, loader) {
+        const t0 = performance.now();
+        const pdf = await loader(url);
+        const t1 = performance.now();
+        const page = await pdf.page(1);
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        await page.render(canvas, 1.5);
+        const t2 = performance.now();
+        await page.render(canvas, 1.51); // warm re-render (zoom tick)
+        const t3 = performance.now();
+        const text = await page.text();
+        const tl = document.createElement('div');
+        tl.className = 'textLayer';
+        document.body.appendChild(tl);
+        await page.renderTextLayer(tl, 1.5);
+        return {
+          name,
+          loadMs: +(t1 - t0).toFixed(1),
+          firstRenderMs: +(t2 - t1).toFixed(1),
+          warmRenderMs: +(t3 - t2).toFixed(1),
+          pages: pdf.pageCount,
+          textSample: text.slice(0, 40),
+          spanCount: tl.querySelectorAll(':scope > span').length,
+          canvasW: canvas.width,
+        };
+      }
+
+      async function editRoundTrip() {
+        const pdf = await loadPdfMupdf(url);
+        if (!canEditText(pdf)) return { error: 'edit capability missing' };
+        // First line of the fixture sits at fitz y 96..128 -> PDF y 714..746.
+        const span = await pdf.textSpanAt(1, 100, 730);
+        if (!span) return { error: 'span not found' };
+        const bytes = await pdf.replaceTextSpan(span, 'Edited in browser by mupdf');
+        const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        const reopened = await loadPdfMupdf(blobUrl);
+        const text = await (await reopened.page(1)).text();
+        return {
+          spanText: span.text,
+          editedBytes: bytes.length,
+          replacementVisible: text.includes('Edited in browser by mupdf'),
+          originalGone: !text.includes(span.text),
+        };
+      }
+
+      window.__run = (async () => {
+        const pdfjs = await measure('pdfjs', loadPdf);
+        const mupdf = await measure('mupdf', loadPdfMupdf);
+        const edit = await editRoundTrip();
+        return { pdfjs, mupdf, edit };
+      })();
+    </script>
+  </body>
+</html>
