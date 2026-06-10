@@ -41,6 +41,12 @@ export interface FormField {
   locked: boolean;
 }
 
+/** One inclusive 1-based page range for POST /documents/{id}/split. */
+export interface SplitRange {
+  from: number;
+  to: number;
+}
+
 /** Page operations accepted by POST /documents/{id}/pages/ops. */
 export type PageOp =
   | { type: 'rotate'; pages: number[]; degrees: number }

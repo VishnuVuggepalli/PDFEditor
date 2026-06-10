@@ -34,6 +34,7 @@ interface Props {
   viewing: number | null;
   onRename: () => void;
   onDuplicate: () => void;
+  onSplit: () => void;
   onDownload: () => void;
   onDelete: () => void;
 }
@@ -42,7 +43,7 @@ export function EditorToolbar(props: Props) {
   const {
     name, tool, setTool, dirty, hasForm, zoom, zoomLabel, setZoom,
     canUndo, canRedo, undo, redo, pendingCount, saving, onSave, onBack,
-    onToggleSearch, viewing, onRename, onDuplicate, onDownload, onDelete,
+    onToggleSearch, viewing, onRename, onDuplicate, onSplit, onDownload, onDelete,
   } = props;
   const readonly = viewing != null;
 
@@ -85,6 +86,7 @@ export function EditorToolbar(props: Props) {
             items={[
               { label: 'Rename', icon: 'pen', onClick: onRename },
               { label: 'Duplicate', icon: 'copy', onClick: onDuplicate },
+              { label: 'Split…', icon: 'split', onClick: onSplit },
               { label: 'Download', icon: 'download', onClick: onDownload },
               { sep: true },
               { label: 'Delete', icon: 'trash', danger: true, onClick: onDelete },

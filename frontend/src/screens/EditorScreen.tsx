@@ -12,6 +12,7 @@ import {
   headPdfUrl,
   renameDocument,
   restoreVersion,
+  splitDocument,
   stampSignature,
   versionPdfUrl,
 } from '../api/documents';
@@ -46,7 +47,9 @@ import { DRAW_COLORS, HIGHLIGHT_COLORS } from '../components/Viewer/annotColors'
 import { VersionPanel } from '../components/VersionPanel/VersionPanel';
 import type { PanelTab } from '../components/VersionPanel/VersionPanel';
 import { Modal } from '../components/shared/Modal';
+import { SplitModal } from '../components/Split/SplitModal';
 import { useToast } from '../components/shared/toastContext';
+import type { SplitRange } from '../types/document';
 
 const annUid = () => 'an_' + Math.random().toString(36).slice(2, 9);
 
@@ -75,7 +78,7 @@ export function EditorScreen({ docId, navigate }: Props) {
   });
   const [search, setSearch] = useState<SearchState>({ open: false, q: '', active: 0 });
   const [jumpToken, setJumpToken] = useState<{ id: string; t: number } | null>(null);
-  const [docModal, setDocModal] = useState<'rename' | 'delete' | null>(null);
+  const [docModal, setDocModal] = useState<'rename' | 'delete' | 'split' | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [saving, setSaving] = useState(false);
   const [signing, setSigning] = useState<SigningTarget | null>(null);
@@ -214,6 +217,20 @@ export function EditorScreen({ docId, navigate }: Props) {
       invalidateDoc();
       push({ type: 'success', title: 'Renamed', msg: doc.name });
       setDocModal(null);
+    },
+  });
+  const splitMut = useMutation({
+    mutationFn: (ranges: SplitRange[]) => splitDocument(docId, ranges),
+    onSuccess: (docs) => {
+      void qc.invalidateQueries({ queryKey: ['documents'] });
+      push({
+        type: 'success',
+        title: `Split into ${docs.length} ${docs.length === 1 ? 'document' : 'documents'}`,
+        msg: docs.map((d) => d.name).join(', '),
+        duration: 6000,
+      });
+      setDocModal(null);
+      navigate(null); // back to the library, where the new documents are listed
     },
   });
   const deleteMut = useMutation({
@@ -375,6 +392,7 @@ export function EditorScreen({ docId, navigate }: Props) {
           setDocModal('rename');
         }}
         onDuplicate={duplicateDoc}
+        onSplit={() => setDocModal('split')}
         onDownload={downloadDoc}
         onDelete={() => setDocModal('delete')}
       />
@@ -454,6 +472,14 @@ export function EditorScreen({ docId, navigate }: Props) {
             }}
           />
         </Modal>
+      )}
+      {docModal === 'split' && (
+        <SplitModal
+          pageCount={meta.pdf.pageCount}
+          busy={splitMut.isPending}
+          onSplit={(ranges) => splitMut.mutate(ranges)}
+          onCancel={() => setDocModal(null)}
+        />
       )}
       {docModal === 'delete' && (
         <Modal

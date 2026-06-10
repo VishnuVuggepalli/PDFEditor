@@ -217,6 +217,57 @@ async function main() {
   await page.waitForSelector('.dropzone');
   step('form document cleaned up');
 
+  // 11. merge: upload two PDFs, select both, merge into one
+  await page.setInputFiles('input[type=file]', FIXTURE);
+  await page.locator('.doc-card', { hasText: 'sample.pdf' }).first().waitFor();
+  await page.setInputFiles('input[type=file]', FORM_FIXTURE);
+  await page.locator('.doc-card', { hasText: 'form.pdf' }).first().waitFor();
+  const badge = async (name) => {
+    const el = page.locator('.doc-card', { hasText: name }).locator('.dc-pagecount').first();
+    await el.waitFor();
+    return parseInt(await el.innerText(), 10);
+  };
+  const expectedPages = (await badge('sample.pdf')) + (await badge('form.pdf'));
+  await page.click('.lib-sec button:has-text("Select")');
+  await page.locator('.doc-card', { hasText: 'sample.pdf' }).locator('.dc-check').click();
+  await page.locator('.doc-card', { hasText: 'form.pdf' }).locator('.dc-check').click();
+  await page.click('.select-bar .btn.primary:has-text("Merge 2 documents")');
+  await page.waitForSelector('.merge-list .merge-item');
+  await page.fill('.merge-name input', 'merged-smoke.pdf');
+  await page.screenshot({ path: `${SHOTS}/06-merge-modal.png` });
+  await page.locator('.modal .btn.primary', { hasText: 'Merge' }).click();
+  await page.waitForSelector('text=Merged 2 documents');
+  const mergedPages = await badge('merged-smoke.pdf');
+  if (mergedPages !== expectedPages) {
+    throw new Error(`merged page count ${mergedPages} != source sum ${expectedPages}`);
+  }
+  step(`merge created merged-smoke.pdf with ${mergedPages} pages (sum of sources)`);
+
+  // 12. split p1-1 out of the merged document
+  await page.locator('.doc-card', { hasText: 'merged-smoke.pdf' }).first().click();
+  await page.waitForSelector('.pdf-sheet canvas.pdf-canvas');
+  await page.locator('.tb-left button[aria-label="More"]').click();
+  await page.locator('.menu .item', { hasText: 'Split' }).click();
+  await page.waitForSelector('.split-row');
+  await page.fill('.split-row input[name="from"]', '1');
+  await page.fill('.split-row input[name="to"]', '1');
+  await page.waitForSelector('text=creates 1 document: p1');
+  await page.screenshot({ path: `${SHOTS}/07-split-modal.png` });
+  await page.locator('.modal .btn.primary', { hasText: 'Split' }).click();
+  await page.waitForSelector('text=Split into 1 document');
+  await page.waitForSelector('.dropzone'); // navigated back to the library
+  await page.locator('.doc-card', { hasText: 'merged-smoke (p1-1).pdf' }).first().waitFor();
+  step('split p1-1 created "merged-smoke (p1-1).pdf" in the library');
+
+  // cleanup: remove only the documents created by the merge/split flows
+  const created = new Set(['sample.pdf', 'form.pdf', 'merged-smoke.pdf', 'merged-smoke (p1-1).pdf']);
+  const listed = await (await fetch(`${BASE}/api/v1/documents`)).json();
+  for (const d of listed.data ?? []) {
+    if (!created.has(d.name)) continue;
+    await fetch(`${BASE}/api/v1/documents/${encodeURIComponent(d.id)}`, { method: 'DELETE' });
+  }
+  step('merge/split fixtures cleaned up');
+
   await browser.close();
   console.log('\nSMOKE OK');
 }

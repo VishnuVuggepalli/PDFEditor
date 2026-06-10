@@ -8,6 +8,7 @@ import type {
   DocumentRecord,
   FormField,
   PageOp,
+  SplitRange,
   Version,
 } from '../types/document';
 
@@ -73,6 +74,19 @@ export function stampSignature(
   return request<DocumentRecord>(`/documents/${encodeURIComponent(id)}/stamp`, {
     method: 'POST',
     body: form,
+  });
+}
+
+/** Combine 2+ documents (head versions, in order) into one new document. */
+export function mergeDocuments(ids: string[], name: string): Promise<DocumentRecord> {
+  return requestJSON<DocumentRecord>('/documents/merge', 'POST', { ids, name });
+}
+
+/** Extract page ranges of the head version into new documents; the source
+ * document is left untouched. Returns the created documents (one per range). */
+export function splitDocument(id: string, ranges: SplitRange[]): Promise<DocumentRecord[]> {
+  return requestJSON<DocumentRecord[]>(`/documents/${encodeURIComponent(id)}/split`, 'POST', {
+    ranges,
   });
 }
 

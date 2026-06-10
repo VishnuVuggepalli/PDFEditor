@@ -7,10 +7,12 @@ import {
   downloadToDisk,
   duplicateDocument,
   listDocuments,
+  mergeDocuments,
   renameDocument,
   uploadDocument,
 } from '../../api/documents';
 import type { DocumentRecord } from '../../types/document';
+import { toggleId } from '../../utils/mergeOrder';
 import { Icon } from '../shared/Icon';
 import { Modal } from '../shared/Modal';
 import { useToast } from '../shared/toastContext';
@@ -18,6 +20,7 @@ import { DocCard } from './DocCard';
 import { DocRow } from './DocRow';
 import type { DocActions } from './docMenu';
 import { Dropzone } from './Dropzone';
+import { MergeModal } from './MergeModal';
 import { RenameModal } from './RenameModal';
 import { CardSkeleton, RowSkeleton } from './Skeletons';
 import { UploadCard } from './UploadCard';
@@ -39,6 +42,10 @@ export function Library({ navigate, libView = 'grid', themeToggle }: Props) {
   const [renaming, setRenaming] = useState<DocumentRecord | null>(null);
   const [uploads, setUploads] = useState<UploadTask[]>([]);
   const aborts = useRef<Record<string, () => void>>({});
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [merging, setMerging] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const docsQuery = useQuery({ queryKey: ['documents'], queryFn: listDocuments });
   const docs = docsQuery.data ?? [];
@@ -65,6 +72,39 @@ export function Library({ navigate, libView = 'grid', themeToggle }: Props) {
       void invalidate();
       push({ type: 'success', title: 'Duplicated', msg: copy.name });
     },
+  });
+  const mergeMut = useMutation({
+    mutationFn: ({ ids, name }: { ids: string[]; name: string }) => mergeDocuments(ids, name),
+    onSuccess: (doc, { ids }) => {
+      void invalidate();
+      push({
+        type: 'success',
+        title: `Merged ${ids.length} documents`,
+        msg: doc.name,
+      });
+      setMerging(false);
+      setSelectedIds([]);
+      setSelectMode(false);
+      setHighlightId(doc.id);
+      setTimeout(() => setHighlightId((h) => (h === doc.id ? null : h)), 5000);
+    },
+  });
+
+  /* ---- multi-select for merge ---- */
+  // selection order = default merge order; drop ids of since-deleted docs
+  const selectedDocs = selectedIds
+    .map((id) => docs.find((d) => d.id === id))
+    .filter((d): d is DocumentRecord => d !== undefined);
+
+  function clearSelection() {
+    setSelectedIds([]);
+    setSelectMode(false);
+  }
+  const selectionFor = (doc: DocumentRecord) => ({
+    selecting: selectMode,
+    selected: selectedIds.includes(doc.id),
+    onToggleSelect: (id: string) => setSelectedIds((ids) => toggleId(ids, id)),
+    highlight: highlightId === doc.id,
   });
 
   function addError(name: string, error: string) {
@@ -164,9 +204,19 @@ export function Library({ navigate, libView = 'grid', themeToggle }: Props) {
 
           <div className="lib-sec">
             <h2>Your documents</h2>
-            <span className="cnt">
-              {loading ? '' : `${docs.length} ${docs.length === 1 ? 'file' : 'files'}`}
-            </span>
+            <div className="lib-sec-right">
+              {docs.length >= 2 && (
+                <button
+                  className={`btn sm ${selectMode ? 'active' : ''}`}
+                  onClick={() => (selectMode ? clearSelection() : setSelectMode(true))}
+                >
+                  {selectMode ? 'Done' : 'Select'}
+                </button>
+              )}
+              <span className="cnt">
+                {loading ? '' : `${docs.length} ${docs.length === 1 ? 'file' : 'files'}`}
+              </span>
+            </div>
           </div>
 
           {loading ? (
@@ -201,19 +251,47 @@ export function Library({ navigate, libView = 'grid', themeToggle }: Props) {
                 <span></span>
               </div>
               {docs.map((d) => (
-                <DocRow key={d.id} doc={d} actions={actions} />
+                <DocRow key={d.id} doc={d} actions={actions} selection={selectionFor(d)} />
               ))}
             </div>
           ) : (
             <div className="doc-grid">
               {docs.map((d) => (
-                <DocCard key={d.id} doc={d} actions={actions} />
+                <DocCard key={d.id} doc={d} actions={actions} selection={selectionFor(d)} />
               ))}
             </div>
           )}
         </div>
       </div>
 
+      {selectedDocs.length > 0 && (
+        <div className="select-bar">
+          <span className="sb-count">
+            {selectedDocs.length} selected
+          </span>
+          <button className="btn" onClick={clearSelection}>
+            Clear
+          </button>
+          <button
+            className="btn primary"
+            disabled={selectedDocs.length < 2}
+            title={selectedDocs.length < 2 ? 'Select at least 2 documents to merge' : undefined}
+            onClick={() => setMerging(true)}
+          >
+            <Icon name="merge" size={15} />
+            Merge {selectedDocs.length} {selectedDocs.length === 1 ? 'document' : 'documents'}
+          </button>
+        </div>
+      )}
+
+      {merging && selectedDocs.length >= 2 && (
+        <MergeModal
+          docs={selectedDocs}
+          busy={mergeMut.isPending}
+          onMerge={(ids, name) => mergeMut.mutate({ ids, name })}
+          onCancel={() => setMerging(false)}
+        />
+      )}
       {renaming && (
         <RenameModal
           initialName={renaming.name}

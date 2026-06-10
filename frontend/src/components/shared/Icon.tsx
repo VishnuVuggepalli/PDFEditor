@@ -47,6 +47,8 @@ const PATHS: Record<string, string> = {
     '<path d="M4 12h16M4 12l3-3M4 12l3 3M20 12l-3-3M20 12l-3 3"/><rect x="3.5" y="4" width="17" height="16" rx="1.5"/>',
   fitPage: '<rect x="4" y="3.5" width="16" height="17" rx="1.5"/><path d="M8 8l-2 2 2 2M16 8l2 2-2 2"/>',
   drag: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
+  merge: '<path d="M7 4v6a4 4 0 0 0 4 4h2"/><path d="M7 20v-6"/><path d="M17 11l3 3-3 3"/>',
+  split: '<path d="M4 4h7v16H4z"/><path d="M15 4h5M15 20h5M20 4v5M20 15v5"/>',
   moon: '<path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19"/>',
 };
