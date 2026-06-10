@@ -9,9 +9,8 @@
 
 import type * as MU from 'mupdf';
 import type { ClientMessage, MupdfRequest, WorkerMessage } from './mupdfProtocol';
-import { approxBaseline, base14FontName, buildEditContentStream } from './mupdfTransforms';
+import { replaceTextInPage } from './mupdfEdit';
 import { readPageInfo, readTextLines, renderPageRgba } from './mupdfPageOps';
-import type { TextSpanInfo } from './engineApi';
 
 type Mupdf = typeof MU;
 
@@ -121,66 +120,17 @@ async function handle(req: MupdfRequest): Promise<Handled> {
     }
 
     case 'replaceText': {
-      const bytes = replaceText(getDoc(req.docId), req.span, req.newText);
-      return { result: { bytes: bytes.buffer }, transfer: [bytes.buffer] };
+      const mu = mupdfSync();
+      const entry = getDoc(req.docId);
+      const { bytes, font } = replaceTextInPage(
+        mu,
+        entry.doc,
+        getPage(entry, req.span.page),
+        req.span,
+        req.newText,
+      );
+      return { result: { bytes: bytes.buffer, font }, transfer: [bytes.buffer] };
     }
-  }
-}
-
-/** In-place edit: redact the span's region (true content removal), then draw
- * the replacement text via an appended content stream. Returns the complete
- * edited PDF bytes for upload. */
-function replaceText(entry: OpenDoc, span: TextSpanInfo, newText: string): Uint8Array {
-  const mu = mupdfSync();
-  const doc = entry.doc;
-  const page = getPage(entry, span.page);
-
-  const annot = page.createAnnotation('Redact');
-  annot.setRect(span.fitzBox);
-  page.applyRedactions(
-    false,
-    mu.PDFPage.REDACT_IMAGE_NONE,
-    mu.PDFPage.REDACT_LINE_ART_NONE,
-    mu.PDFPage.REDACT_TEXT_REMOVE,
-  );
-
-  if (newText.trim().length > 0) {
-    const fontName = base14FontName(span.fontFamily, 'normal', 'normal');
-    const fontRef = doc.addSimpleFont(new mu.Font(fontName));
-    const pageObj = page.getObject();
-    let res = pageObj.get('Resources');
-    if (!res.isDictionary()) {
-      res = doc.newDictionary();
-      pageObj.put('Resources', res);
-    }
-    let fonts = res.get('Font');
-    if (!fonts.isDictionary()) {
-      fonts = doc.newDictionary();
-      res.put('Font', fonts);
-    }
-    let resName = 'FzEdit';
-    for (let i = 0; !fonts.get(resName).isNull(); i++) resName = `FzEdit${i}`;
-    fonts.put(resName, fontRef);
-
-    const baseline = approxBaseline(span.bbox[1], span.fontSize);
-    const fragment = buildEditContentStream(resName, span.fontSize, span.bbox[0], baseline, newText);
-    const extra = doc.addStream(fragment, {});
-    const contents = pageObj.get('Contents');
-    if (contents.isArray()) {
-      contents.push(extra);
-    } else {
-      const arr = doc.newArray();
-      arr.push(contents);
-      arr.push(extra);
-      pageObj.put('Contents', arr);
-    }
-  }
-
-  const buf = doc.saveToBuffer('garbage,compress');
-  try {
-    return buf.asUint8Array().slice();
-  } finally {
-    buf.destroy();
   }
 }
 

@@ -41,6 +41,10 @@ export interface TextSpanInfo {
   fontName: string;
   /** stext-reported family: sans-serif | serif | monospace */
   fontFamily: string;
+  /** stext-reported weight: normal | bold */
+  fontWeight: string;
+  /** stext-reported style: normal | italic */
+  fontStyle: string;
   fontSize: number;
 }
 

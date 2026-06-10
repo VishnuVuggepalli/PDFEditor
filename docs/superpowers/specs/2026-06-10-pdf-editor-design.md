@@ -136,6 +136,27 @@ new version. Frontend state is never mutated in place.
 4. **Forms** — AcroForm detection, fill, flatten.
 5. **mupdf-WASM core swap** — true click-and-edit text and images in place.
 
+### Phase-5 text-edit font fidelity
+
+In-place edits redact the original line and draw replacement text. Font for
+the replacement is chosen deterministically (mupdfFonts.ts / mupdfEdit.ts):
+
+1. **Embedded reuse** — if the original font's program (FontFile/2/3,
+   including Type0 descendants) is embedded and its cmap still maps every
+   character of the replacement text, the program is re-embedded via
+   `addSimpleFont` and reused.
+2. **Standard-14 / metric match** — exact standard-14 names pass through
+   (including bold/italic faces); metric clones (Arial, Times New Roman,
+   Courier New, Nimbus*, Liberation*, …) map to their standard-14
+   equivalent using the line's real weight/style flags.
+3. **Best effort** — serif/sans/mono from structured text + bold/italic.
+
+Why reuse is conditional, not unconditional: most real-world PDFs embed
+*subsetted* programs (`ABCDEF+Name`); subsetting strips or remaps the cmap,
+so `Font.encodeCharacter` returns notdef for new text — reusing such a
+program would draw tofu. The coverage gate rejects exactly those cases.
+Verified against real wasm in parity/fontfidelity.test.ts.
+
 ## 7. Error Handling
 
 - Validate all uploads at the boundary: MIME/magic bytes, size cap,

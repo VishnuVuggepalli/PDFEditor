@@ -69,6 +69,9 @@ export interface TextLinesResult {
 export interface ReplaceTextResult {
   /** complete edited PDF (transferred) */
   bytes: ArrayBuffer;
+  /** font decision applied to the replacement text (null when the edit
+   * only deleted text) */
+  font: { strategy: 'embedded' | 'base14'; name: string } | null;
 }
 
 /* ---- envelopes ---- */

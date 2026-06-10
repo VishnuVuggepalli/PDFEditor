@@ -175,6 +175,8 @@ class MupdfPage implements PageHandle {
       fitzBox,
       fontName: line.font.name,
       fontFamily: line.font.family,
+      fontWeight: line.font.weight,
+      fontStyle: line.font.style,
       fontSize: line.font.size,
     };
   }
@@ -231,6 +233,12 @@ class MupdfPdf implements PdfEditCapable {
       span,
       newText,
     });
+    if (res.font) {
+      console.info(
+        `[pdf-engine] text edit font: ${res.font.name} (${res.font.strategy})`,
+        `original: ${span.fontName}`,
+      );
+    }
     // The page content changed inside the worker; drop stale text caches.
     const cached = this.pages.get(span.page);
     if (cached) void cached.then((p) => p.invalidate()).catch(() => undefined);

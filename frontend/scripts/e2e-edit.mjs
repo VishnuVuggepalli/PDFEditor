@@ -123,6 +123,25 @@ console.log('original line removed:', !text.includes('PDFEditor test fixture pag
 if (!text.includes(REPLACEMENT)) throw new Error('replacement missing from saved PDF');
 if (text.includes('discard me')) throw new Error('escaped edit leaked into the PDF');
 
+/* ---- font fidelity: the edited line keeps the original's font class ----
+ * The fixture line is Helvetica/sans-serif/normal; the deterministic
+ * strategy must keep that exact standard-14 face for the replacement. */
+{
+  const st = reopened.loadPage(0).toStructuredText('preserve-spans');
+  const lines = JSON.parse(st.asJSON())
+    .blocks.filter((b) => b.type === 'text')
+    .flatMap((b) => b.lines);
+  const edited = lines.find((l) => l.text.includes(REPLACEMENT));
+  if (!edited) throw new Error('edited line not found in structured text');
+  console.log('edited line font:', JSON.stringify(edited.font));
+  if (edited.font.name !== 'Helvetica' || edited.font.family !== 'sans-serif') {
+    throw new Error(
+      `edited line font ${edited.font.name}/${edited.font.family} does not match the original Helvetica/sans-serif`,
+    );
+  }
+  st.destroy();
+}
+
 /* ---- 3. responsiveness while rendering a heavy document ---- */
 const heavyId = await upload('heavy.pdf', 'e2e-heavy.pdf');
 console.log('uploaded heavy doc', heavyId);

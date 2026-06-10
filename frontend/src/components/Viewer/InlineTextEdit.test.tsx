@@ -14,6 +14,8 @@ const SPAN: TextSpanInfo = {
   fitzBox: [72, 96, 272, 128],
   fontName: 'Helvetica',
   fontFamily: 'sans-serif',
+  fontWeight: 'normal',
+  fontStyle: 'normal',
   fontSize: 24,
 };
 
