@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sync/semaphore"
+	"golang.org/x/sync/singleflight"
 )
 
 // Rasterizer is what the thumbnail service needs from a page renderer.
@@ -22,6 +25,10 @@ const (
 	ThumbMaxWidth     = 1024
 )
 
+// maxConcurrentRenders caps how many rasterizer processes (pdftoppm) may run
+// at once, so a burst of cache misses cannot fork-bomb the host.
+const maxConcurrentRenders = 4
+
 // ThumbService renders page thumbnails of a document's head version, caching
 // the PNGs on disk inside the document's own directory:
 //
@@ -34,12 +41,22 @@ type ThumbService struct {
 	svc      *Service
 	raster   Rasterizer
 	docsRoot string // mirrors the fs store layout: {dataDir}/documents
+
+	// flight collapses concurrent identical requests (same id+version+page+
+	// width) into a single render; sem bounds total concurrent renders.
+	flight singleflight.Group
+	sem    *semaphore.Weighted
 }
 
 // NewThumbService wires a ThumbService. docsRoot must be the same
 // {dataDir}/documents directory the fs store writes to.
 func NewThumbService(svc *Service, r Rasterizer, docsRoot string) *ThumbService {
-	return &ThumbService{svc: svc, raster: r, docsRoot: docsRoot}
+	return &ThumbService{
+		svc:      svc,
+		raster:   r,
+		docsRoot: docsRoot,
+		sem:      semaphore.NewWeighted(maxConcurrentRenders),
+	}
 }
 
 // Thumbnail returns the PNG of one page of the head version of document id,
@@ -62,6 +79,26 @@ func (t *ThumbService) Thumbnail(ctx context.Context, id string, page, width int
 		return png, nil
 	}
 
+	// Collapse concurrent identical requests into one render. The key matches
+	// the cache key, so every distinct thumbnail renders at most once.
+	key := fmt.Sprintf("%s/v%d/p%d/w%d", id, doc.HeadVersion, page, width)
+	v, err, _ := t.flight.Do(key, func() (any, error) {
+		return t.render(ctx, id, path, pdf, page, width)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]byte), nil
+}
+
+// render rasterizes one page under the global concurrency cap and caches the
+// result. It re-checks the disk cache first: a duplicate request that joined
+// the flight after a previous flight finished must not re-render.
+func (t *ThumbService) render(ctx context.Context, id, path string, pdf []byte, page, width int) ([]byte, error) {
+	if png, err := os.ReadFile(path); err == nil {
+		return png, nil
+	}
+
 	info, err := t.svc.engine.Info(pdf)
 	if err != nil {
 		return nil, fmt.Errorf("read pdf info for thumbnail: %w", err)
@@ -69,6 +106,11 @@ func (t *ThumbService) Thumbnail(ctx context.Context, id string, page, width int
 	if page > info.PageCount {
 		return nil, fmt.Errorf("%w: page %d of %s (document has %d)", ErrNotFound, page, id, info.PageCount)
 	}
+
+	if err := t.sem.Acquire(ctx, 1); err != nil {
+		return nil, fmt.Errorf("wait for render slot: %w", err)
+	}
+	defer t.sem.Release(1)
 
 	png, err := t.raster.PagePNG(ctx, pdf, page, width)
 	if err != nil {
