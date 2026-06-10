@@ -5,3 +5,4 @@ dist/
 backend/bin/
 backend/data/
 coverage/
+data/

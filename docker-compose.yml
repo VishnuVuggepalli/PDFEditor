@@ -1,0 +1,16 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      PORT: "8000"
+      DATA_DIR: /app/data
+      MAX_UPLOAD_MB: "50"
+    volumes:
+      # ALL state lives here on the host — containers stay disposable.
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  # frontend service added when the frontend scaffold lands:
+  #   build: ./frontend  → nginx serving the React build, proxying /api
