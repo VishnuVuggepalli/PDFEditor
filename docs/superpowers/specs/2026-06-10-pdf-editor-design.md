@@ -39,7 +39,7 @@ pdfcpu) and swap the render/edit core to mupdf-WASM in the final phase.
 | Frontend | React 18 + TypeScript + Vite | Standard, fast dev loop |
 | Rendering (Phases 1–4) | pdf.js | Battle-tested (Firefox viewer), crisp canvas render + selectable text layer |
 | Rendering + editing (Phase 5) | mupdf-WASM (mupdf.js) | Closest open-source engine to Acrobat; real content-stream editing, font re-embedding |
-| Backend | Go (net/http or chi) | Single binary, strong typing, user expertise |
+| Backend | Go + Gin (`gin-gonic/gin`) | Single binary, strong typing, user expertise; Gin confined to the API layer |
 | PDF engine (backend) | pdfcpu | Pure-Go: merge/split/reorder/rotate/delete, annotations, AcroForm fill, validation |
 | Storage | Filesystem behind `DocumentStore` interface | Repository pattern — swappable to S3/DB later |
 | Testing | Go table-driven tests, vitest, Playwright E2E | 80% coverage target |
