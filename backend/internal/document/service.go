@@ -27,6 +27,16 @@ type Engine interface {
 	Validate(pdf []byte) error
 	// Info computes PDF-intrinsic metadata from the bytes.
 	Info(pdf []byte) (PDFInfo, error)
+	// Rotate rotates the given 1-based pages clockwise by degrees (90/180/270).
+	Rotate(pdf []byte, pages []int, degrees int) ([]byte, error)
+	// DeletePages removes the given 1-based pages.
+	DeletePages(pdf []byte, pages []int) ([]byte, error)
+	// Reorder rearranges pages into the given order (a permutation of 1..n).
+	Reorder(pdf []byte, order []int) ([]byte, error)
+	// Merge concatenates the given PDFs, in order, into one.
+	Merge(pdfs [][]byte) ([]byte, error)
+	// ExtractPages produces a new PDF containing only the given pages.
+	ExtractPages(pdf []byte, pages []int) ([]byte, error)
 }
 
 // Service orchestrates the store and the PDF engine. All document mutations

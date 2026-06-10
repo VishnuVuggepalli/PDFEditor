@@ -23,6 +23,9 @@ func NewRouter(h *Handlers) *gin.Engine {
 		v1.GET("/documents/:id/versions", h.ListVersions)
 		v1.GET("/documents/:id/versions/:n", h.DownloadVersion)
 		v1.POST("/documents/:id/versions/:n/restore", h.RestoreVersion)
+		v1.POST("/documents/:id/pages/ops", h.PageOps)
+		v1.POST("/documents/:id/split", h.Split)
+		v1.POST("/documents/merge", h.Merge)
 	}
 	return r
 }

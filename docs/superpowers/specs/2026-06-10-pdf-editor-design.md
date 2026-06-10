@@ -55,7 +55,9 @@ paginated lists).
 | `GET  /api/v1/documents` | List documents (paginated) |
 | `GET  /api/v1/documents/{id}` | Download current version |
 | `GET  /api/v1/documents/{id}/meta` | Page count, version history, form fields |
-| `POST /api/v1/documents/{id}/pages/ops` | Page operations: merge, split, reorder, rotate, delete |
+| `POST /api/v1/documents/{id}/pages/ops` | In-place page operations: rotate, reorder, delete (sequential, validated) |
+| `POST /api/v1/documents/merge` | Combine multiple documents into a new document |
+| `POST /api/v1/documents/{id}/split` | Extract page ranges into new documents (source untouched) |
 | `POST /api/v1/documents/{id}/annotations` | Persist highlights/draw/shapes/stamps into the PDF |
 | `POST /api/v1/documents/{id}/form` | Fill AcroForm fields, optional flatten |
 | `GET  /api/v1/documents/{id}/versions` | List version history |

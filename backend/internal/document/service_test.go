@@ -64,8 +64,12 @@ func (f *fakeStore) AddVersion(_ context.Context, id string, pdf []byte, ops str
 	return d, nil
 }
 
-// fakeEngine validates by prefix and returns canned info.
-type fakeEngine struct{ info PDFInfo }
+// fakeEngine validates by prefix, returns canned info, and records page ops
+// by appending markers to the bytes.
+type fakeEngine struct {
+	info    PDFInfo
+	applied []string
+}
 
 func (f *fakeEngine) Validate(pdf []byte) error {
 	if len(pdf) < 5 || string(pdf[:5]) != "%PDF-" {
@@ -75,6 +79,31 @@ func (f *fakeEngine) Validate(pdf []byte) error {
 }
 
 func (f *fakeEngine) Info(pdf []byte) (PDFInfo, error) { return f.info, nil }
+
+func (f *fakeEngine) mark(pdf []byte, op string) []byte {
+	f.applied = append(f.applied, op)
+	return append(append([]byte{}, pdf...), []byte("|"+op)...)
+}
+
+func (f *fakeEngine) Rotate(pdf []byte, pages []int, degrees int) ([]byte, error) {
+	return f.mark(pdf, fmt.Sprintf("rotate%d", degrees)), nil
+}
+
+func (f *fakeEngine) DeletePages(pdf []byte, pages []int) ([]byte, error) {
+	return f.mark(pdf, "delete"), nil
+}
+
+func (f *fakeEngine) Reorder(pdf []byte, order []int) ([]byte, error) {
+	return f.mark(pdf, "reorder"), nil
+}
+
+func (f *fakeEngine) Merge(pdfs [][]byte) ([]byte, error) {
+	return []byte("%PDF-merged"), nil
+}
+
+func (f *fakeEngine) ExtractPages(pdf []byte, pages []int) ([]byte, error) {
+	return f.mark(pdf, fmt.Sprintf("extract%d", len(pages))), nil
+}
 
 var validPDF = []byte("%PDF-1.7 fake")
 
