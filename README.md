@@ -1,5 +1,7 @@
 # PDFEditor
 
+[![CI](https://github.com/VishnuVuggepalli/PDFEditor/actions/workflows/ci.yml/badge.svg)](https://github.com/VishnuVuggepalli/PDFEditor/actions/workflows/ci.yml)
+
 Web-based PDF editor (learning project) — Acrobat-style capabilities built in phases.
 
 - **Frontend:** React 18 + TypeScript + Vite, pdf.js (later mupdf-WASM), react-query + zustand
@@ -18,6 +20,19 @@ docker-compose up -d --build
 All state lives in `./data` on the host; containers are disposable.
 
 ### Development
+
+CI (GitHub Actions, `.github/workflows/ci.yml`) runs on pushes to `main` and
+PRs: backend gofmt / go vet / golangci-lint / `go test -race -cover` (raster
+tests need `poppler-utils`), frontend eslint / vitest / `tsc -b && vite build`.
+The same commands are wrapped by the root `Makefile`:
+
+```bash
+make test    # backend go test -race -cover + frontend vitest
+make lint    # gofmt + go vet + golangci-lint + eslint
+make build   # go build + tsc/vite build
+make up      # docker-compose up -d --build  (app :8880, API :8800)
+make down
+```
 
 ```bash
 # backend tests

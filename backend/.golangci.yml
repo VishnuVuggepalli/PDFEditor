@@ -1,0 +1,54 @@
+# golangci-lint v2 configuration (matches golangci-lint >= 2.x).
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - misspell
+    - unconvert
+    - gosec
+
+  settings:
+    misspell:
+      locale: US
+
+    errcheck:
+      exclude-functions:
+        # Best-effort deferred cleanup (tmp files, response bodies); failures
+        # here are non-actionable and the happy path checks the real errors.
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*mime/multipart.Writer).Close
+        - os.Remove
+
+    gosec:
+      excludes:
+        # G104 duplicates errcheck; errcheck (with its exclude list above)
+        # is the single source of truth for unhandled errors.
+        - G104
+        # G204/G702: pdftoppm is invoked with a configured binary path and
+        # integer-sanitized args (page numbers / widths via strconv).
+        - G204
+        - G702
+        # G301/G306: data dir is a shared docker volume; 0755/0644 is the
+        # intended permission model for this container deployment.
+        - G301
+        - G306
+        # G304/G703: file paths are derived from server-generated document
+        # IDs inside the store root, not raw user input.
+        - G304
+        - G703
+        # G706: structured slog key/value logging; no format-string injection.
+        - G706
+
+  exclusions:
+    rules:
+      # Tests legitimately use fixed fixture paths and relaxed error handling.
+      - path: _test\.go
+        linters:
+          - gosec
