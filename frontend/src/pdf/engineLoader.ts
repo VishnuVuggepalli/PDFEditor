@@ -16,8 +16,39 @@ import type { PdfHandle } from './engineApi';
 
 export type PdfEngineName = 'pdfjs' | 'mupdf';
 
+/** localStorage key for the persistent runtime override. */
+export const ENGINE_STORAGE_KEY = 'pdfEngine';
+
+function normalizeEngine(v: string | null | undefined): PdfEngineName | null {
+  return v === 'pdfjs' || v === 'mupdf' ? v : null;
+}
+
+/** Engine for the current session. Precedence:
+ *  1. URL `?engine=pdfjs|mupdf` (one-off debugging; works with hash routes)
+ *  2. localStorage `pdfEngine` (persistent override, see InfoTab toggle)
+ *  3. build-time VITE_PDF_ENGINE default
+ */
 export function configuredEngine(): PdfEngineName {
+  try {
+    const fromUrl = normalizeEngine(new URLSearchParams(window.location.search).get('engine'));
+    if (fromUrl) return fromUrl;
+    const stored = normalizeEngine(window.localStorage.getItem(ENGINE_STORAGE_KEY));
+    if (stored) return stored;
+  } catch {
+    // no window/localStorage (tests, exotic privacy modes): use build default
+  }
   return import.meta.env.VITE_PDF_ENGINE === 'mupdf' ? 'mupdf' : 'pdfjs';
+}
+
+/** Persist (or clear) the runtime engine override. Takes effect on the next
+ * document load; callers that want it immediately should reload. */
+export function setEngineOverride(name: PdfEngineName | null): void {
+  try {
+    if (name) window.localStorage.setItem(ENGINE_STORAGE_KEY, name);
+    else window.localStorage.removeItem(ENGINE_STORAGE_KEY);
+  } catch {
+    // localStorage unavailable: the override simply does not persist
+  }
 }
 
 async function loadWithPdfjs(url: string): Promise<PdfHandle> {

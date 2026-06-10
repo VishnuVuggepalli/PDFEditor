@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { subscribeToasts, type ToastInput } from '../api/toastBus';
-import { configuredEngine, loadPdf } from './engineLoader';
+import { configuredEngine, ENGINE_STORAGE_KEY, loadPdf, setEngineOverride } from './engineLoader';
 
 const pdfjsLoad = vi.hoisted(() => vi.fn(async () => ({ engine: 'pdfjs' })));
 const mupdfLoad = vi.hoisted(() => vi.fn(async () => ({ engine: 'mupdf' })));
@@ -14,6 +14,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  window.localStorage.clear();
+  window.history.replaceState(null, '', '/');
 });
 
 describe('configuredEngine', () => {
@@ -30,6 +32,43 @@ describe('configuredEngine', () => {
   it('selects mupdf when flagged', () => {
     vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
     expect(configuredEngine()).toBe('mupdf');
+  });
+});
+
+describe('runtime overrides', () => {
+  it('localStorage pdfEngine beats the build-time default', () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'pdfjs');
+    expect(configuredEngine()).toBe('pdfjs');
+  });
+
+  it('?engine= URL param beats localStorage and the default', () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'pdfjs');
+    window.history.replaceState(null, '', '/?engine=mupdf#/doc/abc');
+    expect(configuredEngine()).toBe('mupdf');
+  });
+
+  it('ignores invalid override values', () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'acrobat');
+    window.history.replaceState(null, '', '/?engine=ghostscript');
+    expect(configuredEngine()).toBe('mupdf');
+  });
+
+  it('setEngineOverride persists and clears the localStorage key', () => {
+    setEngineOverride('pdfjs');
+    expect(window.localStorage.getItem(ENGINE_STORAGE_KEY)).toBe('pdfjs');
+    setEngineOverride(null);
+    expect(window.localStorage.getItem(ENGINE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('loadPdf dispatches through the override', async () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'mupdf');
+    await loadPdf('/doc.pdf');
+    expect(mupdfLoad).toHaveBeenCalledWith('/doc.pdf');
+    expect(pdfjsLoad).not.toHaveBeenCalled();
   });
 });
 

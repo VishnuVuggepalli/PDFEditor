@@ -1,6 +1,33 @@
 import { fmtBytes } from '../../utils/format';
+import { configuredEngine, setEngineOverride } from '../../pdf/engineLoader';
 import { Icon } from '../shared/Icon';
 import type { DocumentMeta } from '../../types/document';
+
+/** Debug toggle: persist the other engine as a localStorage override and
+ * reload so every open document re-renders through it. */
+function EngineRow() {
+  const engine = configuredEngine();
+  const other = engine === 'mupdf' ? 'pdfjs' : 'mupdf';
+  return (
+    <div className="info-row">
+      <span className="k">Renderer</span>
+      <span className="v">
+        {engine}{' '}
+        <button
+          className="badge"
+          type="button"
+          title={`Switch to the ${other} engine (persists in this browser)`}
+          onClick={() => {
+            setEngineOverride(other);
+            window.location.reload();
+          }}
+        >
+          use {other}
+        </button>
+      </span>
+    </div>
+  );
+}
 
 export function InfoTab({ meta, visiblePages }: { meta: DocumentMeta; visiblePages: number }) {
   const doc = meta.document;
@@ -32,6 +59,7 @@ export function InfoTab({ meta, visiblePages }: { meta: DocumentMeta; visiblePag
         <span className="k">Created</span>
         <span className="v">{created}</span>
       </div>
+      <EngineRow />
       <div className="info-badges">
         {meta.pdf.hasForm && (
           <span className="badge accent">
