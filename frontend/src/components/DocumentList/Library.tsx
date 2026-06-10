@@ -13,7 +13,7 @@ import {
 import type { DocumentRecord } from '../../types/document';
 import { Icon } from '../shared/Icon';
 import { Modal } from '../shared/Modal';
-import { useToast } from '../shared/Toasts';
+import { useToast } from '../shared/toastContext';
 import { DocCard } from './DocCard';
 import { DocRow } from './DocRow';
 import type { DocActions } from './docMenu';

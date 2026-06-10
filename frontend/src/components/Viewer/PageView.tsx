@@ -1,6 +1,6 @@
 /** One rendered PDF page: canvas + selectable text layer + annotation
  * overlay + search match marks. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PageHandle, PdfHandle } from '../../pdf/engine';
 import type { ViewportParams } from '../../pdf/coords';
 import { viewportSize } from '../../pdf/coords';
@@ -33,8 +33,13 @@ export function PageView(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const [handle, setHandle] = useState<PageHandle | null>(null);
-  const [vp, setVp] = useState<ViewportParams | null>(null);
   const [textEpoch, setTextEpoch] = useState(0);
+
+  const vp: ViewportParams | null = useMemo(() => {
+    if (!handle) return null;
+    const base = handle.baseSize(page.rotDelta);
+    return handle.viewportParams(targetW / base.width, page.rotDelta);
+  }, [handle, targetW, page.rotDelta]);
 
   useEffect(() => {
     let alive = true;
@@ -53,19 +58,16 @@ export function PageView(props: Props) {
 
   // Render canvas + text layer whenever geometry changes.
   useEffect(() => {
-    if (!handle) return;
+    if (!handle || !vp) return;
     let alive = true;
-    const base = handle.baseSize(page.rotDelta);
-    const scale = targetW / base.width;
-    setVp(handle.viewportParams(scale, page.rotDelta));
     void (async () => {
       const canvas = canvasRef.current;
       const text = textRef.current;
       if (!canvas || !text) return;
       try {
-        await handle.render(canvas, scale, page.rotDelta);
+        await handle.render(canvas, vp.scale, page.rotDelta);
         if (!alive) return;
-        await handle.renderTextLayer(text, scale, page.rotDelta);
+        await handle.renderTextLayer(text, vp.scale, page.rotDelta);
         if (!alive) return;
         setTextEpoch((n) => n + 1);
       } catch {
@@ -75,7 +77,7 @@ export function PageView(props: Props) {
     return () => {
       alive = false;
     };
-  }, [handle, targetW, page.rotDelta]);
+  }, [handle, vp, page.rotDelta]);
 
   // Search marks: post-process text layer spans.
   useEffect(() => {

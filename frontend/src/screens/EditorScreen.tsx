@@ -29,7 +29,7 @@ import type { SearchState } from '../components/Viewer/Viewer';
 import { VersionPanel } from '../components/VersionPanel/VersionPanel';
 import type { PanelTab } from '../components/VersionPanel/VersionPanel';
 import { Modal } from '../components/shared/Modal';
-import { useToast } from '../components/shared/Toasts';
+import { useToast } from '../components/shared/toastContext';
 
 interface Props {
   docId: string;

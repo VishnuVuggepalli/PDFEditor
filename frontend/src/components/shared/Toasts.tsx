@@ -1,17 +1,11 @@
 /** Toast stack. Listens to the toastBus so the API client can raise errors. */
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { subscribeToasts } from '../../api/toastBus';
 import type { ToastInput } from '../../api/toastBus';
 import { Icon } from './Icon';
-
-type PushToast = (t: ToastInput) => void;
-
-const ToastCtx = createContext<PushToast>(() => {});
-
-export function useToast(): PushToast {
-  return useContext(ToastCtx);
-}
+import { ToastCtx } from './toastContext';
+import type { PushToast } from './toastContext';
 
 interface ToastItem extends ToastInput {
   id: string;

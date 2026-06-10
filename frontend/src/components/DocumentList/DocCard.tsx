@@ -2,7 +2,8 @@ import { fmtBytes, relTime, truncMid } from '../../utils/format';
 import { Kebab } from '../shared/Kebab';
 import { docMenu } from './docMenu';
 import type { DocActions } from './docMenu';
-import { DocThumb, useDocPdf } from './DocThumb';
+import { DocThumb } from './DocThumb';
+import { useDocPdf } from './useDocPdf';
 import type { DocumentRecord } from '../../types/document';
 
 interface Props {

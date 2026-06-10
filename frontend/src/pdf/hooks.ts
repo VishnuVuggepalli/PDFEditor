@@ -11,18 +11,20 @@ export interface PdfDocState {
   loading: boolean;
 }
 
+interface Loaded {
+  url: string;
+  pdf: PdfHandle | null;
+  error: string | null;
+}
+
 /** Load (and own) a PdfHandle for the given URL. Destroys on URL change. */
 export function usePdfDocument(url: string | null): PdfDocState {
-  const [state, setState] = useState<PdfDocState>({ pdf: null, error: null, loading: !!url });
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
 
   useEffect(() => {
-    if (!url) {
-      setState({ pdf: null, error: null, loading: false });
-      return;
-    }
+    if (!url) return;
     let alive = true;
     let handle: PdfHandle | null = null;
-    setState({ pdf: null, error: null, loading: true });
     loadPdf(url)
       .then((pdf) => {
         if (!alive) {
@@ -30,12 +32,12 @@ export function usePdfDocument(url: string | null): PdfDocState {
           return;
         }
         handle = pdf;
-        setState({ pdf, error: null, loading: false });
+        setLoaded({ url, pdf, error: null });
       })
       .catch((e: unknown) => {
         if (!alive) return;
         const msg = e instanceof Error ? e.message : 'failed to load PDF';
-        setState({ pdf: null, error: msg, loading: false });
+        setLoaded({ url, pdf: null, error: msg });
       });
     return () => {
       alive = false;
@@ -43,5 +45,7 @@ export function usePdfDocument(url: string | null): PdfDocState {
     };
   }, [url]);
 
-  return state;
+  if (!url) return { pdf: null, error: null, loading: false };
+  if (!loaded || loaded.url !== url) return { pdf: null, error: null, loading: true };
+  return { pdf: loaded.pdf, error: loaded.error, loading: false };
 }
