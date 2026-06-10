@@ -43,6 +43,9 @@
 /* Server-rendered thumbnail image + its loading/fallback states.
    Skeleton and img share the same grid cell so they overlay, not stack. */
 .doc-thumb-img { grid-area: 1 / 1; width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+/* Rotated pages render landscape: cover would crop them to a blank strip,
+   so letterbox instead (container background is already paper white). */
+.doc-thumb-img.landscape { object-fit: contain; object-position: center; }
 .doc-thumb-skel { grid-area: 1 / 1; width: 100%; height: 100%; }
 .doc-thumb-fallback { display: grid; place-items: center; color: var(--text-3); }
 .dc-badges { position: absolute; top: 8px; left: 8px; display: flex; gap: 5px; }

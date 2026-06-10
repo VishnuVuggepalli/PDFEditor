@@ -20,13 +20,18 @@ func requirePdftoppm(t *testing.T) {
 	}
 }
 
-func samplePDF(t *testing.T) []byte {
+func fixturePDF(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "sample.pdf"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", name))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return b
+}
+
+func samplePDF(t *testing.T) []byte {
+	t.Helper()
+	return fixturePDF(t, "sample.pdf")
 }
 
 func TestPagePNG(t *testing.T) {
@@ -81,6 +86,56 @@ func TestPagePNG(t *testing.T) {
 			}
 			if cfg.Height < 1 {
 				t.Errorf("rendered height: want >= 1, got %d", cfg.Height)
+			}
+		})
+	}
+}
+
+// Pages with /Rotate 90 flip pdftoppm's -scale-to-x onto the output's height
+// (the flag applies to the pre-rotation x axis). The renderer must never
+// return a raster narrower than requested, whatever the rotation.
+func TestPagePNGRotatedPages(t *testing.T) {
+	requirePdftoppm(t)
+	ctx := context.Background()
+	r := New()
+
+	tests := []struct {
+		name      string
+		fixture   string
+		width     int
+		landscape bool // expected output orientation
+		exact     bool // re-render path targets the requested width exactly-ish
+	}{
+		// portrait MediaBox + /Rotate 90 displays landscape: -scale-to-x lands
+		// on the short side, so the output is naturally wider than requested.
+		{name: "portrait base rotated 90", fixture: "rot90-portrait-base.pdf",
+			width: 240, landscape: true},
+		// landscape MediaBox + /Rotate 90 displays portrait: without the
+		// re-render the output would be only width*(595/842) px wide.
+		{name: "landscape base rotated 90", fixture: "rot90-landscape-base.pdf",
+			width: 240, landscape: false, exact: true},
+		{name: "landscape base rotated 90 at 630", fixture: "rot90-landscape-base.pdf",
+			width: 630, landscape: false, exact: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := r.PagePNG(ctx, fixturePDF(t, tt.fixture), 1, tt.width)
+			if err != nil {
+				t.Fatalf("PagePNG: %v", err)
+			}
+			cfg, err := png.DecodeConfig(bytes.NewReader(out))
+			if err != nil {
+				t.Fatalf("decode png config: %v", err)
+			}
+			if cfg.Width < tt.width {
+				t.Errorf("rendered width: want >= %d, got %d (under-resolved)", tt.width, cfg.Width)
+			}
+			// The re-render retargets the requested width; allow rounding slack.
+			if tt.exact && cfg.Width > tt.width+2 {
+				t.Errorf("rendered width: want ~%d, got %d (over-rendered)", tt.width, cfg.Width)
+			}
+			if gotLandscape := cfg.Width > cfg.Height; gotLandscape != tt.landscape {
+				t.Errorf("orientation: want landscape=%v, got %dx%d", tt.landscape, cfg.Width, cfg.Height)
 			}
 		})
 	}
