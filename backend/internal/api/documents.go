@@ -14,6 +14,7 @@ import (
 // Handlers holds the API's dependencies.
 type Handlers struct {
 	svc       *document.Service
+	thumbs    *document.ThumbService // optional; attached via SetThumbs
 	maxUpload int64
 }
 

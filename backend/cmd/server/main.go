@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/config"
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/document"
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/pdf"
+	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/raster"
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/store"
 )
 
@@ -39,7 +41,10 @@ func run() error {
 	}
 
 	svc := document.NewService(st, pdf.NewEngine())
-	router := api.NewRouter(api.NewHandlers(svc, cfg.MaxUploadBytes()))
+	h := api.NewHandlers(svc, cfg.MaxUploadBytes())
+	// Thumbnail cache lives inside each document's dir: {dataDir}/documents/{id}/thumbs.
+	h.SetThumbs(document.NewThumbService(svc, raster.New(), filepath.Join(cfg.DataDir, "documents")))
+	router := api.NewRouter(h)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -40,6 +40,11 @@
 .doc-card:hover { border-color: var(--border-strong); box-shadow: 0 8px 24px rgba(16,24,40,.10); transform: translateY(-2px); }
 .dc-thumb { aspect-ratio: 4/3; background: var(--canvas); border-bottom: 1px solid var(--border); position: relative; display: grid; place-items: center; overflow: hidden; }
 .dc-thumb .sheet-mini { width: 60%; aspect-ratio: 8.5/11; background: #fff; box-shadow: 0 2px 10px rgba(16,24,40,.14); border-radius: 2px; overflow: hidden; }
+/* Server-rendered thumbnail image + its loading/fallback states.
+   Skeleton and img share the same grid cell so they overlay, not stack. */
+.doc-thumb-img { grid-area: 1 / 1; width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.doc-thumb-skel { grid-area: 1 / 1; width: 100%; height: 100%; }
+.doc-thumb-fallback { display: grid; place-items: center; color: var(--text-3); }
 .dc-badges { position: absolute; top: 8px; left: 8px; display: flex; gap: 5px; }
 .dc-pagecount { position: absolute; bottom: 8px; right: 8px; background: rgba(17,24,39,.78); color: #fff; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 99px; backdrop-filter: blur(4px); }
 .dc-meta { padding: 12px 12px 13px; }

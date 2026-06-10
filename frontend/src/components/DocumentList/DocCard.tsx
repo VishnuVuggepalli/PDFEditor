@@ -3,7 +3,7 @@ import { Kebab } from '../shared/Kebab';
 import { docMenu } from './docMenu';
 import type { DocActions } from './docMenu';
 import { DocThumb } from './DocThumb';
-import { useDocPdf } from './useDocPdf';
+import { useDocPageCount } from './useDocPageCount';
 import type { DocumentRecord } from '../../types/document';
 
 interface Props {
@@ -12,13 +12,12 @@ interface Props {
 }
 
 export function DocCard({ doc, actions }: Props) {
-  const { pdf } = useDocPdf(doc.id, doc.headVersion);
+  const pages = useDocPageCount(doc.id, doc.headVersion);
   const head = doc.versions[doc.versions.length - 1];
-  const pages = pdf?.pageCount ?? null;
   return (
     <div className="doc-card" onClick={() => actions.onOpen(doc.id)}>
       <div className="dc-thumb">
-        <DocThumb pdf={pdf} width={210} />
+        <DocThumb docId={doc.id} headVersion={doc.headVersion} width={210} />
         {pages !== null && (
           <span className="dc-pagecount">
             {pages} {pages === 1 ? 'page' : 'pages'}
