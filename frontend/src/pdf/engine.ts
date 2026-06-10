@@ -36,7 +36,10 @@ class Page implements PageHandle {
   readonly baseRotation: number;
   readonly viewBox: [number, number, number, number];
   private readonly proxy: PDFPageProxy;
-  private renderTask: ReturnType<PDFPageProxy['render']> | null = null;
+  /** In-flight render per target canvas. Page handles are cached and shared
+   * (viewer + sidebar thumbnails render the same page concurrently), so a
+   * single slot would let one consumer cancel another's render. */
+  private readonly renderTasks = new Map<HTMLCanvasElement, ReturnType<PDFPageProxy['render']>>();
 
   constructor(proxy: PDFPageProxy) {
     this.proxy = proxy;
@@ -71,13 +74,14 @@ class Page implements PageHandle {
     canvas.height = Math.floor(viewport.height * dpr);
     canvas.style.width = `${viewport.width}px`;
     canvas.style.height = `${viewport.height}px`;
-    if (this.renderTask) this.renderTask.cancel();
+    const prev = this.renderTasks.get(canvas);
+    if (prev) prev.cancel();
     const task = this.proxy.render({
       canvasContext: ctx,
       viewport,
       transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
     });
-    this.renderTask = task;
+    this.renderTasks.set(canvas, task);
     try {
       await task.promise;
     } catch (e) {
@@ -85,7 +89,7 @@ class Page implements PageHandle {
       if (e instanceof Error && e.name === 'RenderingCancelledException') return;
       throw e;
     } finally {
-      if (this.renderTask === task) this.renderTask = null;
+      if (this.renderTasks.get(canvas) === task) this.renderTasks.delete(canvas);
     }
   }
 
