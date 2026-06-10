@@ -58,10 +58,36 @@ paginated lists).
 | `POST /api/v1/documents/{id}/pages/ops` | Page operations: merge, split, reorder, rotate, delete |
 | `POST /api/v1/documents/{id}/annotations` | Persist highlights/draw/shapes/stamps into the PDF |
 | `POST /api/v1/documents/{id}/form` | Fill AcroForm fields, optional flatten |
+| `GET  /api/v1/documents/{id}/versions` | List version history |
+| `GET  /api/v1/documents/{id}/versions/{n}` | Download a specific version (read-only) |
+| `POST /api/v1/documents/{id}/versions/{n}/restore` | Restore: copy version n as new head version |
 
 - `DocumentStore` interface: `Save`, `Get`, `List`, `Versions`, `NewVersion`.
 - Every mutating endpoint returns the new version ID.
 - Errors: user-friendly message in envelope; detailed context logged server-side.
+
+### Storage Layout & Metadata
+
+```
+data/documents/{uuid}/
+├── meta.json     # our metadata (atomic write: temp file + rename)
+├── v1.pdf        # original upload — never modified
+├── v2.pdf
+└── v3.pdf        # head version
+```
+
+Two kinds of metadata, stored differently:
+
+1. **Application metadata** (`meta.json`, owned by us): document id, original
+   filename, createdAt, headVersion, and a versions array — each entry holds
+   version number, timestamp, operation summary, file size, and sha256.
+2. **PDF-intrinsic metadata** (owned by the PDF): page count, AcroForm fields,
+   encryption status, author. Never duplicated into `meta.json` — computed
+   live via pdfcpu on `GET /:id/meta` so it can never drift stale.
+
+JSON sidecar (not SQLite) is deliberate for v1: zero dependencies and
+human-readable history. The `DocumentStore` interface hides this choice;
+swapping to SQLite/S3 later touches no handler code.
 
 ## 5. Frontend Components
 
@@ -72,6 +98,7 @@ paginated lists).
 | `PageSidebar` | Thumbnails, drag-to-reorder, rotate/delete per page |
 | `FormLayer` | Detect AcroForm fields, inline fill UI |
 | `Toolbar` | Tool selection, save, undo/redo |
+| `VersionPanel` | Browse version history, preview old versions read-only, restore |
 
 Edit model: user actions accumulate in an immutable operation queue; "Save"
 POSTs operations to the backend, which applies them via pdfcpu and returns a
