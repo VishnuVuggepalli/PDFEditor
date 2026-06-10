@@ -27,6 +27,7 @@ func NewRouter(h *Handlers, allowedOrigins []string) *gin.Engine {
 		v1.GET("/documents/:id/thumbnail", h.Thumbnail)
 		v1.GET("/documents/:id/versions", h.ListVersions)
 		v1.GET("/documents/:id/versions/:n", h.DownloadVersion)
+		v1.DELETE("/documents/:id/versions/:n", h.DeleteVersion)
 		v1.POST("/documents/:id/versions/:n/restore", h.RestoreVersion)
 		v1.POST("/documents/:id/pages/ops", h.PageOps)
 		v1.POST("/documents/:id/annotations", h.Annotate)

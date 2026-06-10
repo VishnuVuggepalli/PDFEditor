@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -178,13 +179,15 @@ func (s *FSStore) List(ctx context.Context) ([]*document.Document, error) {
 	return docs, nil
 }
 
-// VersionBytes returns the raw PDF bytes of version n.
+// VersionBytes returns the raw PDF bytes of version n. Existence is decided
+// by the Versions list, not a 1..head range check: per-version deletion may
+// leave gaps in the numbering.
 func (s *FSStore) VersionBytes(ctx context.Context, id string, n int) ([]byte, error) {
 	doc, err := s.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if n < 1 || n > doc.HeadVersion {
+	if !hasVersion(doc, n) {
 		return nil, fmt.Errorf("%w: version %d of %s", document.ErrNotFound, n, id)
 	}
 	b, err := os.ReadFile(s.versionPath(id, n))
@@ -253,6 +256,88 @@ func (s *FSStore) Delete(ctx context.Context, id string) error {
 	}
 	delete(s.index, id)
 	return nil
+}
+
+// DeleteVersion removes one non-head, non-original version: its Versions[]
+// entry (numbering gaps are allowed), its vN.pdf, and its cached thumbnails.
+// Guards are enforced here, under the store lock, so a concurrent AddVersion
+// can never race a head deletion:
+//   - v1 (the original upload) can never be deleted
+//   - the head version can never be deleted
+//   - the only remaining version can never be deleted
+//
+// meta.json is rewritten atomically before any file is removed, so a crash
+// can leave an orphaned vN.pdf at worst — never metadata pointing at a
+// missing file.
+func (s *FSStore) DeleteVersion(ctx context.Context, id string, n int) (*document.Document, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cur, ok := s.index[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", document.ErrNotFound, id)
+	}
+	if !hasVersion(cur, n) {
+		return nil, fmt.Errorf("%w: version %d of %s", document.ErrNotFound, n, id)
+	}
+	if n == 1 {
+		return nil, fmt.Errorf("%w: cannot delete v1 (the original upload)", document.ErrInvalidInput)
+	}
+	if n == cur.HeadVersion {
+		return nil, fmt.Errorf("%w: cannot delete the current head version v%d", document.ErrInvalidInput, n)
+	}
+	if len(cur.Versions) == 1 {
+		return nil, fmt.Errorf("%w: cannot delete the only remaining version", document.ErrInvalidInput)
+	}
+
+	// Build an updated copy without version n; the indexed record is replaced,
+	// never mutated.
+	next := copyDoc(cur)
+	kept := make([]document.Version, 0, len(next.Versions)-1)
+	for _, v := range next.Versions {
+		if v.N != n {
+			kept = append(kept, v)
+		}
+	}
+	next.Versions = kept
+	if err := s.writeMetaAtomic(next); err != nil {
+		return nil, err
+	}
+	s.index[id] = next
+
+	// Metadata is committed; file removal failures leave only orphans, so
+	// they are logged rather than surfaced.
+	if err := os.Remove(s.versionPath(id, n)); err != nil {
+		slog.Warn("remove version file failed", "doc", id, "version", n, "err", err)
+	}
+	s.removeVersionThumbs(id, n)
+	return copyDoc(next), nil
+}
+
+// removeVersionThumbs deletes the cached thumbnails of one version:
+// {docDir}/thumbs/v{n}-p{page}-w{width}.png (best effort).
+func (s *FSStore) removeVersionThumbs(id string, n int) {
+	pattern := filepath.Join(s.docDir(id), "thumbs", fmt.Sprintf("v%d-p*-w*.png", n))
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		slog.Warn("glob version thumbs failed", "doc", id, "version", n, "err", err)
+		return
+	}
+	for _, m := range matches {
+		if err := os.Remove(m); err != nil {
+			slog.Warn("remove version thumb failed", "doc", id, "path", m, "err", err)
+		}
+	}
+}
+
+// hasVersion reports whether version n exists in the document's version list.
+func hasVersion(d *document.Document, n int) bool {
+	for _, v := range d.Versions {
+		if v.N == n {
+			return true
+		}
+	}
+	return false
 }
 
 // copyDoc returns a deep copy so callers can never mutate indexed state.
