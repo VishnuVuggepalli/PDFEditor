@@ -1,122 +1,47 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+/** Root: hash routing (#/ → library, #/doc/:id → editor) + theme toggle. */
+import { useEffect, useState } from 'react';
+import { Library } from './components/DocumentList/Library';
+import { EditorScreen } from './screens/EditorScreen';
+import { Icon } from './components/shared/Icon';
+import { Tip } from './components/shared/Tip';
 
-function App() {
-  const [count, setCount] = useState(0)
+const THEME_KEY = 'pdfeditor.theme';
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function useRoute() {
+  const [hash, setHash] = useState(window.location.hash || '#/');
+  useEffect(() => {
+    const on = () => setHash(window.location.hash || '#/');
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const m = hash.match(/^#\/doc\/(.+)$/);
+  return { name: m ? ('editor' as const) : ('library' as const), docId: m ? decodeURIComponent(m[1]) : null };
 }
 
-export default App
+function navigate(id: string | null) {
+  window.location.hash = id ? `#/doc/${encodeURIComponent(id)}` : '#/';
+}
+
+export default function App() {
+  const [dark, setDark] = useState(() => localStorage.getItem(THEME_KEY) === 'dark');
+  const route = useRoute();
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
+  }, [dark]);
+
+  const themeToggle = (
+    <Tip label={dark ? 'Light mode' : 'Dark mode'} pos="bottom">
+      <button className="iconbtn" onClick={() => setDark(!dark)} aria-label="Toggle theme">
+        <Icon name={dark ? 'sun' : 'moon'} />
+      </button>
+    </Tip>
+  );
+
+  return route.name === 'editor' && route.docId ? (
+    <EditorScreen key={route.docId} docId={route.docId} navigate={navigate} />
+  ) : (
+    <Library navigate={navigate} themeToggle={themeToggle} />
+  );
+}
