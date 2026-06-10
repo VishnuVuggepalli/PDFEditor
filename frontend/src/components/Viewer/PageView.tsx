@@ -21,8 +21,8 @@ interface Props {
   onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemove: (id: string) => void;
   onRemoveStamp: (id: string) => void;
-  /** sign tool click: page (head-version numbering), PDF point, page viewBox */
-  onSign: (page: number, at: [number, number], viewBox: [number, number, number, number]) => void;
+  /** sign tool click: page (head-version numbering), viewport point + params */
+  onSign: (page: number, at: [number, number], vp: ViewportParams) => void;
   searchQ: string;
   /** index of the active match within this page, or -1 */
   searchActiveLocal: number;
@@ -149,7 +149,7 @@ export function PageView(props: Props) {
           onUpdate={onUpdate}
           onRemove={onRemove}
           onRemoveStamp={onRemoveStamp}
-          onSign={(at) => onSign(page.origN, at, vp.viewBox)}
+          onSign={(at) => onSign(page.origN, at, vp)}
         />
       )}
     </div>

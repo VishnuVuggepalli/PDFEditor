@@ -48,7 +48,7 @@ interface Props {
   onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemove: (id: string) => void;
   onRemoveStamp: (id: string) => void;
-  /** sign tool click: PDF-point location on this page */
+  /** sign tool click: viewport-px location on this page */
   onSign: (at: [number, number]) => void;
 }
 
@@ -87,6 +87,10 @@ export function AnnotationLayer(props: Props) {
       return;
     }
     if (tool === 'text') {
+      // preventDefault: the browser's default mousedown focus handling would
+      // otherwise blur the box right after our autofocus, and the empty-blur
+      // handler would delete it again.
+      e.preventDefault();
       const fontPx = style.fontSize * vp.scale;
       const rect = viewportRectToPdf({ x, y, w: fontPx * 4, h: fontPx * 1.4 }, vp);
       const id = auid();
@@ -98,7 +102,8 @@ export function AnnotationLayer(props: Props) {
       return;
     }
     if (tool === 'sign') {
-      onSign(viewportToPdfPoint(x, y, vp));
+      // handled in the click handler — opening the modal on mousedown would
+      // let the same gesture's trailing events hit its outside-close hook
       return;
     }
     e.preventDefault();
@@ -372,8 +377,11 @@ export function AnnotationLayer(props: Props) {
         onMouseMove={move}
         onMouseUp={up}
         onMouseLeave={up}
-        onClick={() => {
+        onClick={(e) => {
           if (openNote) setOpenNote(null);
+          if (active && tool === 'sign') {
+            onSign(rel(e));
+          }
         }}
       />
     </>

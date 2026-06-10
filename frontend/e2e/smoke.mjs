@@ -97,6 +97,9 @@ async function main() {
   await page.click('.btn.primary:has-text("Save")');
   await page.waitForSelector('text=/Saved as v\\d+/');
   step('save posts queue and reports new version');
+  // let the new head version load — store re-init wipes pending edits made
+  // during the reload window
+  await page.waitForTimeout(1500);
 
   // 6a. text annotation: place, type, save, reopen, verify persisted
   const docId = decodeURIComponent(page.url().match(/#\/doc\/(.+)$/)[1]);
@@ -136,6 +139,7 @@ async function main() {
   await page.click('.btn.primary:has-text("Save")');
   await page.waitForSelector('text=Saved as v5');
   step('drawn signature placed as ink annotation and saved');
+  await page.waitForTimeout(1500); // head reload settle
 
   // 6c. image signature: upload → place → save → version list shows stamp
   await page.click('button[aria-label="Sign"]');

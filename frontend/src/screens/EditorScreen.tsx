@@ -27,9 +27,16 @@ import {
 import {
   dataUrlToBlob,
   placementRect,
-  strokesToPdfPaths,
+  strokesToViewportPaths,
+  SIGN_DEFAULT_W,
 } from '../utils/signature';
 import type { SignaturePayload } from '../utils/signature';
+import {
+  viewportPathToPdf,
+  viewportRectToPdf,
+  viewportSize,
+} from '../pdf/coords';
+import type { ViewportParams } from '../pdf/coords';
 import { EditorToolbar } from '../components/Toolbar/EditorToolbar';
 import { PageSidebar } from '../components/PageSidebar/PageSidebar';
 import { Viewer } from '../components/Viewer/Viewer';
@@ -46,8 +53,9 @@ const annUid = () => 'an_' + Math.random().toString(36).slice(2, 9);
 /** Where a sign-tool click landed, pending the signature modal. */
 interface SigningTarget {
   page: number;
+  /** viewport px on that page */
   at: [number, number];
-  viewBox: [number, number, number, number];
+  vp: ViewportParams;
 }
 
 interface Props {
@@ -140,18 +148,24 @@ export function EditorScreen({ docId, navigate }: Props) {
   const applySignature = useCallback(
     (sig: SignaturePayload) => {
       if (!signing) return;
-      const rect = placementRect(signing.at, signing.viewBox, sig.aspect);
+      const { at, vp, page } = signing;
+      // Place in viewport space so the signature stays visually upright on
+      // rotated pages, then convert to PDF points like all other annotations.
+      const rectVp = placementRect(at, viewportSize(vp), sig.aspect, SIGN_DEFAULT_W * vp.scale);
+      const rect = viewportRectToPdf(rectVp, vp);
       if (sig.kind === 'draw') {
         store.addAnnot({
           id: annUid(),
           type: 'ink',
-          page: signing.page,
+          page,
           rect,
           color: sig.color,
-          paths: strokesToPdfPaths(sig.strokes, rect),
+          paths: strokesToViewportPaths(sig.strokes, rectVp).map((pts) =>
+            viewportPathToPdf(pts, vp),
+          ),
         });
       } else {
-        store.addStamp({ id: annUid(), page: signing.page, rect, dataUrl: sig.dataUrl });
+        store.addStamp({ id: annUid(), page, rect, dataUrl: sig.dataUrl });
       }
       setSigning(null);
     },
@@ -397,7 +411,7 @@ export function EditorScreen({ docId, navigate }: Props) {
             onUpdateAnnot={(id, patch) => store.updateAnnot(id, patch)}
             onRemoveAnnot={store.removeAnnot}
             onRemoveStamp={store.removeStamp}
-            onSign={(page, at, viewBox) => setSigning({ page, at, viewBox })}
+            onSign={(page, at, vp) => setSigning({ page, at, vp })}
           />
         ) : (
           <div className="viewer-wrap">

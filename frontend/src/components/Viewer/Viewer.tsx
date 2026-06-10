@@ -2,7 +2,7 @@
  * read-only banner when viewing an old version. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PdfHandle } from '../../pdf/engine';
-import type { PdfRect } from '../../pdf/coords';
+import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
 import type { AnnotStyle, Tool, Zoom } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
@@ -38,7 +38,7 @@ interface Props {
   onUpdateAnnot: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemoveAnnot: (id: string) => void;
   onRemoveStamp: (id: string) => void;
-  onSign: (page: number, at: [number, number], viewBox: [number, number, number, number]) => void;
+  onSign: (page: number, at: [number, number], vp: ViewportParams) => void;
 }
 
 export function Viewer(props: Props) {

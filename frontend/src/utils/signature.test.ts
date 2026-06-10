@@ -2,56 +2,46 @@ import { describe, expect, it } from 'vitest';
 import {
   dataUrlToBlob,
   placementRect,
-  strokesToPdfPaths,
+  strokesToViewportPaths,
   validateSignatureFile,
   MAX_SIGNATURE_IMAGE_BYTES,
 } from './signature';
 
-const LETTER: [number, number, number, number] = [0, 0, 612, 792];
+const PAGE = { width: 660, height: 850 };
 
 describe('placementRect', () => {
-  it('centers the default-width rect on the click point', () => {
-    const r = placementRect([306, 396], LETTER, 0.5, 170);
-    expect(r[2] - r[0]).toBeCloseTo(170);
-    expect(r[3] - r[1]).toBeCloseTo(85);
-    expect((r[0] + r[2]) / 2).toBeCloseTo(306);
-    expect((r[1] + r[3]) / 2).toBeCloseTo(396);
+  it('centers the rect on the click point', () => {
+    const r = placementRect([330, 425], PAGE, 0.5, 170);
+    expect(r.w).toBeCloseTo(170);
+    expect(r.h).toBeCloseTo(85);
+    expect(r.x + r.w / 2).toBeCloseTo(330);
+    expect(r.y + r.h / 2).toBeCloseTo(425);
   });
 
   it('clamps to the page edges', () => {
-    const low = placementRect([0, 0], LETTER, 0.5, 170);
-    expect(low[0]).toBe(0);
-    expect(low[1]).toBe(0);
-    const high = placementRect([612, 792], LETTER, 0.5, 170);
-    expect(high[2]).toBeCloseTo(612);
-    expect(high[3]).toBeCloseTo(792);
+    const tl = placementRect([0, 0], PAGE, 0.5, 170);
+    expect(tl.x).toBe(0);
+    expect(tl.y).toBe(0);
+    const br = placementRect([660, 850], PAGE, 0.5, 170);
+    expect(br.x + br.w).toBeCloseTo(660);
+    expect(br.y + br.h).toBeCloseTo(850);
   });
 
-  it('shrinks for pages narrower than the default width', () => {
-    const tiny: [number, number, number, number] = [0, 0, 100, 100];
-    const r = placementRect([50, 50], tiny, 0.5, 170);
-    expect(r[2] - r[0]).toBeCloseTo(90); // 90% of page width
-  });
-
-  it('respects a shifted viewBox origin', () => {
-    const shifted: [number, number, number, number] = [100, 100, 712, 892];
-    const r = placementRect([100, 100], shifted, 0.5, 170);
-    expect(r[0]).toBeGreaterThanOrEqual(100);
-    expect(r[1]).toBeGreaterThanOrEqual(100);
+  it('shrinks for pages narrower than the target width', () => {
+    const r = placementRect([50, 50], { width: 100, height: 100 }, 0.5, 170);
+    expect(r.w).toBeCloseTo(90); // 90% of page width
   });
 });
 
-describe('strokesToPdfPaths', () => {
-  it('maps normalized pad strokes into the rect with y flipped', () => {
-    const rect: [number, number, number, number] = [100, 200, 300, 300];
-    const paths = strokesToPdfPaths([[[0, 0], [1, 1]]], rect);
-    // pad top-left (0,0) → rect top-left (100, 300); pad bottom-right → (300, 200)
-    expect(paths).toEqual([[100, 300, 300, 200]]);
+describe('strokesToViewportPaths', () => {
+  it('maps normalized pad strokes into the rect (y stays down)', () => {
+    const rect = { x: 100, y: 200, w: 200, h: 100 };
+    const paths = strokesToViewportPaths([[[0, 0], [1, 1]]], rect);
+    expect(paths).toEqual([[[100, 200], [300, 300]]]);
   });
 
   it('drops single-point strokes', () => {
-    const rect: [number, number, number, number] = [0, 0, 10, 10];
-    expect(strokesToPdfPaths([[[0.5, 0.5]]], rect)).toEqual([]);
+    expect(strokesToViewportPaths([[[0.5, 0.5]]], { x: 0, y: 0, w: 10, h: 10 })).toEqual([]);
   });
 });
 

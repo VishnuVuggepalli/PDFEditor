@@ -1,9 +1,14 @@
 /** Pure helpers for the Sign tool: placement geometry, stroke mapping and
- * data-URL handling. No DOM access — unit-testable. */
+ * data-URL handling. No DOM access — unit-testable.
+ *
+ * Placement is computed in VIEWPORT space (px, y down) and converted to PDF
+ * points by the caller via coords.ts — this keeps signatures visually
+ * upright on rotated pages, exactly like hand-drawn ink. */
 
-import type { PdfRect } from '../pdf/coords';
+import type { ViewportRect } from '../pdf/coords';
 
-/** Default placed signature width in PDF points (~29% of a letter page). */
+/** Default placed signature width in PDF points (~29% of a letter page);
+ * multiply by the viewport scale for the on-screen width. */
 export const SIGN_DEFAULT_W = 170;
 
 /** A signature drawn on the pad: strokes normalized to 0..1 of the pad,
@@ -26,43 +31,31 @@ export interface ImageSignature {
 
 export type SignaturePayload = DrawnSignature | ImageSignature;
 
-/** Compute the placement rect (PDF points, lower-left origin) for a
- * signature centered on the clicked point, clamped inside the page box. */
+/** Compute the placement rect (viewport px, top-left origin) for a
+ * signature centered on the clicked point, clamped inside the page. */
 export function placementRect(
   at: readonly [number, number],
-  viewBox: readonly [number, number, number, number],
+  page: { width: number; height: number },
   aspect: number,
-  targetW: number = SIGN_DEFAULT_W,
-): PdfRect {
-  const [x0, y0, x1, y1] = viewBox;
-  const pageW = x1 - x0;
-  const pageH = y1 - y0;
-  const w = Math.min(targetW, pageW * 0.9);
-  const h = Math.min(w * aspect, pageH * 0.9);
-  const llx = Math.max(x0, Math.min(x1 - w, at[0] - w / 2));
-  const lly = Math.max(y0, Math.min(y1 - h, at[1] - h / 2));
-  return [llx, lly, llx + w, lly + h];
+  targetW: number,
+): ViewportRect {
+  const w = Math.min(targetW, page.width * 0.9);
+  const h = Math.min(w * aspect, page.height * 0.9);
+  const x = Math.max(0, Math.min(page.width - w, at[0] - w / 2));
+  const y = Math.max(0, Math.min(page.height - h, at[1] - h / 2));
+  return { x, y, w, h };
 }
 
-/** Map pad-normalized strokes (0..1, y down) into a PDF rect (y up),
- * producing flat [x1,y1,x2,y2,...] ink paths. Single-point strokes are
- * dropped (the backend requires at least two points per path). */
-export function strokesToPdfPaths(
+/** Map pad-normalized strokes (0..1, y down) into a viewport rect (also
+ * y down), producing per-stroke point lists. Single-point strokes are
+ * dropped (the backend requires at least two points per ink path). */
+export function strokesToViewportPaths(
   strokes: ReadonlyArray<ReadonlyArray<readonly [number, number]>>,
-  rect: PdfRect,
-): number[][] {
-  const [llx, lly, urx, ury] = rect;
-  const w = urx - llx;
-  const h = ury - lly;
+  rect: ViewportRect,
+): [number, number][][] {
   return strokes
     .filter((s) => s.length >= 2)
-    .map((s) => {
-      const flat: number[] = [];
-      for (const [nx, ny] of s) {
-        flat.push(llx + nx * w, ury - ny * h);
-      }
-      return flat;
-    });
+    .map((s) => s.map(([nx, ny]): [number, number] => [rect.x + nx * rect.w, rect.y + ny * rect.h]));
 }
 
 /** Decode a data: URL into a Blob (for multipart upload). */
