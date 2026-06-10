@@ -1,13 +1,15 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
-// Dev server proxies /api to the dockerized Go backend (host port 8800).
+// Dev server proxies /api to the Go backend: the dockerized one on host
+// port 8800 by default, or wherever BACKEND_URL points (e.g. CI runs a
+// plain `go run` backend on another port).
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8800',
+        target: process.env.BACKEND_URL || 'http://localhost:8800',
         changeOrigin: true,
       },
     },
