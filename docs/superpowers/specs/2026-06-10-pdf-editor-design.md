@@ -151,7 +151,20 @@ new version. Frontend state is never mutated in place.
 - **E2E:** Playwright — upload → render → annotate → save → re-download flow.
 - Coverage gate: 80%+.
 
-## 9. Out of Scope (v1)
+## 9. Licensing
+
+mupdf (and its WASM build, mupdf.js) is licensed AGPL-3.0. That license is
+**accepted** for this project (decision recorded 2026-06-10): PDFEditor is a
+personal, non-distributed tool — it runs only on the owner's own
+infrastructure for the owner's own documents, so the AGPL's
+network-distribution obligations impose no practical burden, and the full
+source is in this repository anyway. If the project were ever distributed
+commercially or offered as a service to third parties, the options are a
+commercial mupdf license from Artifex or reverting the frontend default to
+the pdf.js engine (Apache-2.0), which remains fully functional behind
+`VITE_PDF_ENGINE=pdfjs`.
+
+## 10. Out of Scope (v1)
 
 - Authentication / multi-user accounts
 - Digital signatures (cryptographic)
