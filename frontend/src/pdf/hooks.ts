@@ -2,8 +2,8 @@
  * importing pdfjs-dist directly. */
 
 import { useEffect, useState } from 'react';
-import { loadPdf } from './engine';
-import type { PdfHandle } from './engine';
+import { loadPdf } from './engineLoader';
+import type { PdfHandle } from './engineApi';
 
 export interface PdfDocState {
   pdf: PdfHandle | null;

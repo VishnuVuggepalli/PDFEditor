@@ -5,31 +5,11 @@ import { getDocument, TextLayer } from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { ensureWorker } from './worker';
 import type { ViewportParams } from './coords';
+import type { PageHandle, PdfHandle } from './engineApi';
 
-export interface PageHandle {
-  /** 1-based page number */
-  readonly n: number;
-  /** the page's intrinsic /Rotate in degrees */
-  readonly baseRotation: number;
-  /** unscaled [x0,y0,x1,y1] viewBox in PDF points */
-  readonly viewBox: [number, number, number, number];
-  /** width/height in px of the unrotated, unscaled page */
-  baseSize(extraRotation?: number): { width: number; height: number };
-  viewportParams(scale: number, extraRotation?: number): ViewportParams;
-  render(canvas: HTMLCanvasElement, scale: number, extraRotation?: number): Promise<void>;
-  renderTextLayer(
-    container: HTMLDivElement,
-    scale: number,
-    extraRotation?: number,
-  ): Promise<void>;
-  text(): Promise<string>;
-}
-
-export interface PdfHandle {
-  readonly pageCount: number;
-  page(n: number): Promise<PageHandle>;
-  destroy(): void;
-}
+// Engine-neutral interfaces live in engineApi.ts; re-exported here so
+// existing imports keep working.
+export type { PageHandle, PdfHandle } from './engineApi';
 
 class Page implements PageHandle {
   readonly n: number;
