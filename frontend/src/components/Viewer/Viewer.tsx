@@ -39,6 +39,8 @@ interface Props {
   onRemoveAnnot: (id: string) => void;
   onRemoveStamp: (id: string) => void;
   onSign: (page: number, at: [number, number], vp: ViewportParams) => void;
+  /** in-place text edit result (mupdf engine only) */
+  onContentEdited?: (bytes: Uint8Array) => void;
 }
 
 export function Viewer(props: Props) {
@@ -46,6 +48,7 @@ export function Viewer(props: Props) {
     pdf, pages, activeId, zoom, jumpToken, onActivePage, search, setSearch,
     viewing, onExitVersion, tool, annotStyle, setAnnotStyle,
     annots, stamps, onAddAnnot, onUpdateAnnot, onRemoveAnnot, onRemoveStamp, onSign,
+    onContentEdited,
   } = props;
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageNodes = useRef<Record<string, HTMLDivElement | null>>({});
@@ -231,6 +234,7 @@ export function Viewer(props: Props) {
                 registerNode={(id, el) => {
                   pageNodes.current[id] = el;
                 }}
+                onContentEdited={viewing != null ? undefined : onContentEdited}
               />
             ))}
           </div>

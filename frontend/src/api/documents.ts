@@ -90,6 +90,17 @@ export function splitDocument(id: string, ranges: SplitRange[]): Promise<Documen
   });
 }
 
+/** Upload a complete client-edited PDF (mupdf in-place text edit) as a new
+ * version. Wire format: multipart form { pdf }; ops summary "content edit". */
+export function replaceContent(id: string, pdf: Uint8Array): Promise<DocumentRecord> {
+  const form = new FormData();
+  form.append('pdf', new Blob([pdf as BlobPart], { type: 'application/pdf' }), 'edited.pdf');
+  return request<DocumentRecord>(`/documents/${encodeURIComponent(id)}/content`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
 export function getFormFields(id: string): Promise<FormField[]> {
   return request<FormField[]>(`/documents/${encodeURIComponent(id)}/form`);
 }

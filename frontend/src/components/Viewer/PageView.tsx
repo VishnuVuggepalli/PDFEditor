@@ -2,8 +2,9 @@
  * overlay + search match marks. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PageHandle, PdfHandle } from '../../pdf/engine';
+import { canEditText } from '../../pdf/engineApi';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
-import { viewportSize } from '../../pdf/coords';
+import { viewportSize, viewportToPdfPoint } from '../../pdf/coords';
 import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
 import type { AnnotStyle, Tool } from '../../state/editorStore';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -27,13 +28,16 @@ interface Props {
   /** index of the active match within this page, or -1 */
   searchActiveLocal: number;
   registerNode: (id: string, el: HTMLDivElement | null) => void;
+  /** receives full edited PDF bytes after an in-place text edit (mupdf
+   * engine only); absent or non-editing engines disable the gesture */
+  onContentEdited?: (bytes: Uint8Array) => void;
 }
 
 export function PageView(props: Props) {
   const {
     pdf, page, targetW, tool, style, readonly, annots, stamps,
     onAdd, onUpdate, onRemove, onRemoveStamp, onSign,
-    searchQ, searchActiveLocal, registerNode,
+    searchQ, searchActiveLocal, registerNode, onContentEdited,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -126,11 +130,31 @@ export function PageView(props: Props) {
 
   const size = vp ? viewportSize(vp) : { width: targetW, height: targetW * (11 / 8.5) };
 
+  // In-place text edit prototype (mupdf engine): double-click a text line,
+  // edit it in a prompt; the redacted+rewritten PDF goes to onContentEdited.
+  const editable = !readonly && onContentEdited !== undefined && canEditText(pdf);
+  async function onDoubleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!editable || !vp || !canEditText(pdf)) return;
+    const host = e.currentTarget.getBoundingClientRect();
+    const [px, py] = viewportToPdfPoint(e.clientX - host.left, e.clientY - host.top, vp);
+    try {
+      const span = await pdf.textSpanAt(page.origN, px, py);
+      if (!span) return;
+      const next = window.prompt('Edit text', span.text);
+      if (next === null || next === span.text) return;
+      const bytes = await pdf.replaceTextSpan(span, next);
+      onContentEdited(bytes);
+    } catch {
+      // edit failures are surfaced by the save call; the page stays intact
+    }
+  }
+
   return (
     <div
       ref={(el) => registerNode(page.id, el)}
       className="sheet pdf-sheet"
       style={{ width: size.width, height: size.height }}
+      onDoubleClick={editable ? (e) => void onDoubleClick(e) : undefined}
     >
       <canvas ref={canvasRef} className="pdf-canvas" />
       <div ref={textRef} className="textLayer" />
