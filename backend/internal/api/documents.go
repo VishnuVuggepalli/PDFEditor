@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 
@@ -65,8 +66,20 @@ func (h *Handlers) Download(c *gin.Context) {
 		fail(c, err)
 		return
 	}
-	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", doc.Name))
+	c.Header("Content-Disposition", contentDisposition("inline", doc.Name))
 	c.Data(http.StatusOK, "application/pdf", b)
+}
+
+// contentDisposition builds an RFC 6266 Content-Disposition header value.
+// mime.FormatMediaType quotes ASCII filenames and switches to the RFC 5987
+// extended form (filename*=utf-8”...) for non-ASCII ones, so names are never
+// emitted raw into the header.
+func contentDisposition(disposition, filename string) string {
+	if v := mime.FormatMediaType(disposition, map[string]string{"filename": filename}); v != "" {
+		return v
+	}
+	// Unrepresentable name (should not happen): fall back to a safe constant.
+	return disposition + `; filename="document.pdf"`
 }
 
 // renameRequest is the body for PATCH /api/v1/documents/:id.

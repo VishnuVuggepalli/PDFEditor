@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -20,13 +21,22 @@ func newFakeStore() *fakeStore {
 
 func (f *fakeStore) key(id string, n int) string { return fmt.Sprintf("%s/v%d", id, n) }
 
+// copyFakeDoc deep-copies a record, mirroring FSStore's copyDoc: callers must
+// never be able to mutate indexed state through a returned pointer.
+func copyFakeDoc(d *Document) *Document {
+	cp := *d
+	cp.Versions = make([]Version, len(d.Versions))
+	copy(cp.Versions, d.Versions)
+	return &cp
+}
+
 func (f *fakeStore) Create(_ context.Context, name string, pdf []byte) (*Document, error) {
 	f.next++
 	id := fmt.Sprintf("doc-%d", f.next)
 	doc := &Document{ID: id, Name: name, HeadVersion: 1, Versions: []Version{{N: 1, Ops: "upload"}}}
 	f.docs[id] = doc
 	f.bytes[f.key(id, 1)] = pdf
-	return doc, nil
+	return copyFakeDoc(doc), nil
 }
 
 func (f *fakeStore) Get(_ context.Context, id string) (*Document, error) {
@@ -34,13 +44,13 @@ func (f *fakeStore) Get(_ context.Context, id string) (*Document, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
-	return d, nil
+	return copyFakeDoc(d), nil
 }
 
 func (f *fakeStore) List(_ context.Context) ([]*Document, error) {
 	out := make([]*Document, 0, len(f.docs))
 	for _, d := range f.docs {
-		out = append(out, d)
+		out = append(out, copyFakeDoc(d))
 	}
 	return out, nil
 }
@@ -54,23 +64,28 @@ func (f *fakeStore) VersionBytes(_ context.Context, id string, n int) ([]byte, e
 }
 
 func (f *fakeStore) AddVersion(_ context.Context, id string, pdf []byte, ops string) (*Document, error) {
-	d, ok := f.docs[id]
+	cur, ok := f.docs[id]
 	if !ok {
 		return nil, ErrNotFound
 	}
-	d.HeadVersion++
-	d.Versions = append(d.Versions, Version{N: d.HeadVersion, Ops: ops})
-	f.bytes[f.key(id, d.HeadVersion)] = pdf
-	return d, nil
+	// Copy-on-write, mirroring FSStore: replace the indexed record.
+	next := copyFakeDoc(cur)
+	next.HeadVersion++
+	next.Versions = append(next.Versions, Version{N: next.HeadVersion, Ops: ops})
+	f.docs[id] = next
+	f.bytes[f.key(id, next.HeadVersion)] = pdf
+	return copyFakeDoc(next), nil
 }
 
 func (f *fakeStore) Rename(_ context.Context, id string, name string) (*Document, error) {
-	d, ok := f.docs[id]
+	cur, ok := f.docs[id]
 	if !ok {
 		return nil, ErrNotFound
 	}
-	d.Name = name
-	return d, nil
+	next := copyFakeDoc(cur)
+	next.Name = name
+	f.docs[id] = next
+	return copyFakeDoc(next), nil
 }
 
 func (f *fakeStore) Delete(_ context.Context, id string) error {
@@ -160,6 +175,9 @@ func TestUpload(t *testing.T) {
 	}{
 		{"valid upload", "a.pdf", validPDF, nil},
 		{"empty name", "", validPDF, ErrInvalidInput},
+		{"name at byte cap", strings.Repeat("a", MaxNameBytes), validPDF, nil},
+		{"name over byte cap", strings.Repeat("a", MaxNameBytes+1), validPDF, ErrInvalidInput},
+		{"multibyte name over cap", strings.Repeat("ü", MaxNameBytes/2+1), validPDF, ErrInvalidInput},
 		{"invalid pdf", "b.pdf", []byte("nope"), ErrInvalidPDF},
 		{"empty data", "c.pdf", nil, ErrInvalidPDF},
 	}
@@ -205,6 +223,43 @@ func TestDownloadAndMeta(t *testing.T) {
 
 	if _, _, err := svc.Download(ctx, "missing"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestRenameNameValidation(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	doc, err := svc.Upload(ctx, "a.pdf", validPDF)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		newName string
+		wantErr error
+	}{
+		{"valid rename", "b.pdf", nil},
+		{"empty name", "", ErrInvalidInput},
+		{"name at byte cap", strings.Repeat("a", MaxNameBytes), nil},
+		{"name over byte cap", strings.Repeat("a", MaxNameBytes+1), ErrInvalidInput},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := svc.Rename(ctx, doc.ID, tt.newName)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("want %v, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Rename: %v", err)
+			}
+			if got.Name != tt.newName {
+				t.Errorf("want name %q, got %q", tt.newName, got.Name)
+			}
+		})
 	}
 }
 

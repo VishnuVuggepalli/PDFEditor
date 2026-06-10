@@ -52,6 +52,21 @@ type Engine interface {
 	FillForm(pdf []byte, values map[string]string) ([]byte, error)
 }
 
+// MaxNameBytes caps document display names (bytes, not runes): long enough
+// for any sane filename, short enough to bound headers and meta.json growth.
+const MaxNameBytes = 1024
+
+// validateName rejects empty and oversized document names.
+func validateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: empty name", ErrInvalidInput)
+	}
+	if len(name) > MaxNameBytes {
+		return fmt.Errorf("%w: name exceeds %d bytes (got %d)", ErrInvalidInput, MaxNameBytes, len(name))
+	}
+	return nil
+}
+
 // Service orchestrates the store and the PDF engine. All document mutations
 // in the application flow through here.
 type Service struct {
@@ -66,8 +81,8 @@ func NewService(store Store, engine Engine) *Service {
 
 // Upload validates and stores a new PDF as a new document.
 func (s *Service) Upload(ctx context.Context, name string, pdf []byte) (*Document, error) {
-	if name == "" {
-		return nil, fmt.Errorf("%w: empty name", ErrInvalidInput)
+	if err := validateName(name); err != nil {
+		return nil, err
 	}
 	if err := s.engine.Validate(pdf); err != nil {
 		return nil, err
@@ -123,8 +138,8 @@ func (s *Service) Meta(ctx context.Context, id string) (*Meta, error) {
 
 // Rename updates a document's display name.
 func (s *Service) Rename(ctx context.Context, id string, name string) (*Document, error) {
-	if name == "" {
-		return nil, fmt.Errorf("%w: empty name", ErrInvalidInput)
+	if err := validateName(name); err != nil {
+		return nil, err
 	}
 	doc, err := s.store.Rename(ctx, id, name)
 	if err != nil {
