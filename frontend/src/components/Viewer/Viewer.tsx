@@ -2,7 +2,8 @@
  * read-only banner when viewing an old version. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PdfHandle } from '../../pdf/engine';
-import type { EditorPage, PendingAnnotation } from '../../state/opsQueue';
+import type { PdfRect } from '../../pdf/coords';
+import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
 import type { AnnotStyle, Tool, Zoom } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
 import { AnnotToolbar } from './AnnotToolbar';
@@ -32,16 +33,19 @@ interface Props {
   annotStyle: AnnotStyle;
   setAnnotStyle: (patch: Partial<AnnotStyle>) => void;
   annots: ReadonlyArray<PendingAnnotation>;
+  stamps: ReadonlyArray<PendingStamp>;
   onAddAnnot: (a: PendingAnnotation) => void;
-  onUpdateAnnot: (id: string, patch: { contents?: string }) => void;
+  onUpdateAnnot: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemoveAnnot: (id: string) => void;
+  onRemoveStamp: (id: string) => void;
+  onSign: (page: number, at: [number, number], viewBox: [number, number, number, number]) => void;
 }
 
 export function Viewer(props: Props) {
   const {
     pdf, pages, activeId, zoom, jumpToken, onActivePage, search, setSearch,
     viewing, onExitVersion, tool, annotStyle, setAnnotStyle,
-    annots, onAddAnnot, onUpdateAnnot, onRemoveAnnot,
+    annots, stamps, onAddAnnot, onUpdateAnnot, onRemoveAnnot, onRemoveStamp, onSign,
   } = props;
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageNodes = useRef<Record<string, HTMLDivElement | null>>({});
@@ -216,9 +220,12 @@ export function Viewer(props: Props) {
                 style={annotStyle}
                 readonly={viewing != null}
                 annots={annots.filter((a) => a.page === p.origN)}
+                stamps={stamps.filter((s) => s.page === p.origN)}
                 onAdd={onAddAnnot}
                 onUpdate={onUpdateAnnot}
                 onRemove={onRemoveAnnot}
+                onRemoveStamp={onRemoveStamp}
+                onSign={onSign}
                 searchQ={search.open ? search.q : ''}
                 searchActiveLocal={i === activePageIdx ? activeLocal : -1}
                 registerNode={(id, el) => {

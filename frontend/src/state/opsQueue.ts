@@ -28,6 +28,26 @@ export interface PendingAnnotation {
   readonly opacity?: number;
   /** ink strokes, each a flat [x1,y1,x2,y2,...] list in PDF points */
   readonly paths?: ReadonlyArray<ReadonlyArray<number>>;
+  /** text only: font size in PDF points */
+  readonly fontSize?: number;
+  /** text only: optional background color */
+  readonly bg?: string;
+  /** text/square/circle/line: stroke width */
+  readonly borderWidth?: number;
+  /** line only: [x1,y1,x2,y2] endpoints in PDF points */
+  readonly line?: ReadonlyArray<number>;
+}
+
+/** One queued signature-image stamp (posted to /stamp on save, after
+ * annotations; each stamp creates its own version). */
+export interface PendingStamp {
+  readonly id: string;
+  /** page number in the saved head version */
+  readonly page: number;
+  /** placement rect in PDF points, lower-left origin */
+  readonly rect: PdfRect;
+  /** data: URL used both for overlay preview and for the upload */
+  readonly dataUrl: string;
 }
 
 export function initPages(pageCount: number): EditorPage[] {
@@ -110,26 +130,34 @@ export function buildPageOps(pages: ReadonlyArray<EditorPage>): PageOp[] {
 export function countPendingOps(
   pages: ReadonlyArray<EditorPage>,
   annots: ReadonlyArray<PendingAnnotation>,
+  stamps: ReadonlyArray<PendingStamp> = [],
 ): number {
   const rotated = pages.filter((p) => !p.deleted && p.rotDelta !== 0).length;
   const deleted = pages.filter((p) => p.deleted).length;
-  return rotated + deleted + (orderChanged(pages) ? 1 : 0) + annots.length;
+  return rotated + deleted + (orderChanged(pages) ? 1 : 0) + annots.length + stamps.length;
 }
 
-/** Convert pending annotations to the wire format. */
+/** Convert pending annotations to the wire format. Text annotations that
+ * were left empty (created then never typed into) are dropped. */
 export function toAnnotationInputs(
   annots: ReadonlyArray<PendingAnnotation>,
 ): AnnotationInput[] {
-  return annots.map((a) => {
-    const out: AnnotationInput = {
-      type: a.type,
-      page: a.page,
-      rect: [...a.rect],
-      color: a.color,
-    };
-    if (a.contents) out.contents = a.contents;
-    if (a.opacity !== undefined) out.opacity = a.opacity;
-    if (a.paths) out.paths = a.paths.map((p) => [...p]);
-    return out;
-  });
+  return annots
+    .filter((a) => a.type !== 'text' || (a.contents ?? '').trim() !== '')
+    .map((a) => {
+      const out: AnnotationInput = {
+        type: a.type,
+        page: a.page,
+        rect: [...a.rect],
+        color: a.color,
+      };
+      if (a.contents) out.contents = a.contents;
+      if (a.opacity !== undefined) out.opacity = a.opacity;
+      if (a.paths) out.paths = a.paths.map((p) => [...p]);
+      if (a.fontSize !== undefined) out.fontSize = Math.round(a.fontSize);
+      if (a.bg) out.bg = a.bg;
+      if (a.borderWidth !== undefined) out.borderWidth = a.borderWidth;
+      if (a.line) out.line = [...a.line];
+      return out;
+    });
 }

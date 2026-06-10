@@ -8,10 +8,12 @@ import type { FormField } from '../../types/document';
 
 interface Props {
   docId: string;
+  /** whether the head PDF carries an AcroForm at all */
+  hasForm: boolean;
   readonly: boolean;
 }
 
-export function FormsTab({ docId, readonly }: Props) {
+export function FormsTab({ docId, hasForm, readonly }: Props) {
   const push = useToast();
   const qc = useQueryClient();
   const [edits, setEdits] = useState<Record<string, string>>({});
@@ -19,6 +21,7 @@ export function FormsTab({ docId, readonly }: Props) {
   const fieldsQuery = useQuery({
     queryKey: ['form', docId],
     queryFn: () => getFormFields(docId),
+    enabled: hasForm,
   });
 
   const saveMut = useMutation({
@@ -31,6 +34,21 @@ export function FormsTab({ docId, readonly }: Props) {
       push({ type: 'success', title: `Saved form as v${doc.headVersion}` });
     },
   });
+
+  if (!hasForm) {
+    return (
+      <div className="forms-tab">
+        <div className="forms-empty">
+          <div className="fe-title">This document has no form fields</div>
+          <p>
+            Fillable (AcroForm) fields show up here automatically when a PDF
+            contains them. You can still annotate, sign or type text directly
+            on the pages.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (fieldsQuery.isLoading) {
     return (

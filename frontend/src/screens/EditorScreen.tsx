@@ -12,24 +12,43 @@ import {
   headPdfUrl,
   renameDocument,
   restoreVersion,
+  stampSignature,
   versionPdfUrl,
 } from '../api/documents';
 import { usePdfDocument } from '../pdf/hooks';
 import { useEditorStore } from '../state/editorStore';
+import type { Tool } from '../state/editorStore';
 import {
   buildPageOps,
   countPendingOps,
   initPages,
   toAnnotationInputs,
 } from '../state/opsQueue';
+import {
+  dataUrlToBlob,
+  placementRect,
+  strokesToPdfPaths,
+} from '../utils/signature';
+import type { SignaturePayload } from '../utils/signature';
 import { EditorToolbar } from '../components/Toolbar/EditorToolbar';
 import { PageSidebar } from '../components/PageSidebar/PageSidebar';
 import { Viewer } from '../components/Viewer/Viewer';
 import type { SearchState } from '../components/Viewer/Viewer';
+import { SignatureModal } from '../components/Viewer/SignatureModal';
+import { DRAW_COLORS, HIGHLIGHT_COLORS } from '../components/Viewer/annotColors';
 import { VersionPanel } from '../components/VersionPanel/VersionPanel';
 import type { PanelTab } from '../components/VersionPanel/VersionPanel';
 import { Modal } from '../components/shared/Modal';
 import { useToast } from '../components/shared/toastContext';
+
+const annUid = () => 'an_' + Math.random().toString(36).slice(2, 9);
+
+/** Where a sign-tool click landed, pending the signature modal. */
+interface SigningTarget {
+  page: number;
+  at: [number, number];
+  viewBox: [number, number, number, number];
+}
 
 interface Props {
   docId: string;
@@ -51,6 +70,7 @@ export function EditorScreen({ docId, navigate }: Props) {
   const [docModal, setDocModal] = useState<'rename' | 'delete' | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [saving, setSaving] = useState(false);
+  const [signing, setSigning] = useState<SigningTarget | null>(null);
 
   const metaQuery = useQuery({
     queryKey: ['meta', docId],
@@ -82,7 +102,7 @@ export function EditorScreen({ docId, navigate }: Props) {
     void qc.invalidateQueries({ queryKey: ['form', docId] });
   }, [qc, docId]);
 
-  const pendingCount = countPendingOps(store.pages, store.annots);
+  const pendingCount = countPendingOps(store.pages, store.annots, store.stamps);
   const dirty = pendingCount > 0;
 
   const save = useCallback(async () => {
@@ -94,6 +114,12 @@ export function EditorScreen({ docId, navigate }: Props) {
       let lastVersion: number | null = null;
       if (annPayload.length > 0) {
         const doc = await addAnnotations(docId, annPayload);
+        lastVersion = doc.headVersion;
+      }
+      // Stamps go after annotations and before page ops: neither annotations
+      // nor stamps renumber pages, so head-version page numbers stay valid.
+      for (const s of store.stamps) {
+        const doc = await stampSignature(docId, s.page, s.rect, dataUrlToBlob(s.dataUrl));
         lastVersion = doc.headVersion;
       }
       if (pageOps.length > 0) {
@@ -109,6 +135,44 @@ export function EditorScreen({ docId, navigate }: Props) {
       setSaving(false);
     }
   }, [dirty, viewing, saving, store, docId, invalidateDoc, push]);
+
+  /* ---- sign tool ---- */
+  const applySignature = useCallback(
+    (sig: SignaturePayload) => {
+      if (!signing) return;
+      const rect = placementRect(signing.at, signing.viewBox, sig.aspect);
+      if (sig.kind === 'draw') {
+        store.addAnnot({
+          id: annUid(),
+          type: 'ink',
+          page: signing.page,
+          rect,
+          color: sig.color,
+          paths: strokesToPdfPaths(sig.strokes, rect),
+        });
+      } else {
+        store.addStamp({ id: annUid(), page: signing.page, rect, dataUrl: sig.dataUrl });
+      }
+      setSigning(null);
+    },
+    [signing, store],
+  );
+
+  /** Tool switch with sensible per-tool palette defaults (from the design). */
+  const pickTool = useCallback(
+    (t: Tool) => {
+      store.setTool(t);
+      if (t === 'forms') setPanel((p) => ({ ...p, collapsed: false, tab: 'forms' }));
+      const { color } = store.annotStyle;
+      if (t === 'highlight' && !HIGHLIGHT_COLORS.includes(color)) {
+        store.setAnnotStyle({ color: HIGHLIGHT_COLORS[0] });
+      }
+      if (['draw', 'shapes', 'text'].includes(t) && !DRAW_COLORS.includes(color)) {
+        store.setAnnotStyle({ color: t === 'text' ? '#111827' : '#2563eb' });
+      }
+    },
+    [store],
+  );
 
   /* ---- versions ---- */
   const restoreMut = useMutation({
@@ -274,10 +338,7 @@ export function EditorScreen({ docId, navigate }: Props) {
       <EditorToolbar
         name={meta.document.name}
         tool={store.tool}
-        setTool={(t) => {
-          store.setTool(t);
-          if (t === 'forms') setPanel((p) => ({ ...p, collapsed: false, tab: 'forms' }));
-        }}
+        setTool={pickTool}
         dirty={dirty}
         hasForm={meta.pdf.hasForm}
         zoom={store.zoom}
@@ -331,9 +392,12 @@ export function EditorScreen({ docId, navigate }: Props) {
             annotStyle={store.annotStyle}
             setAnnotStyle={store.setAnnotStyle}
             annots={readonly ? [] : store.annots}
+            stamps={readonly ? [] : store.stamps}
             onAddAnnot={store.addAnnot}
             onUpdateAnnot={(id, patch) => store.updateAnnot(id, patch)}
             onRemoveAnnot={store.removeAnnot}
+            onRemoveStamp={store.removeStamp}
+            onSign={(page, at, viewBox) => setSigning({ page, at, viewBox })}
           />
         ) : (
           <div className="viewer-wrap">
@@ -354,6 +418,9 @@ export function EditorScreen({ docId, navigate }: Props) {
           onRestore={(n) => restoreMut.mutate(n)}
         />
       </div>
+      {signing && (
+        <SignatureModal onApply={applySignature} onCancel={() => setSigning(null)} />
+      )}
       {docModal === 'rename' && (
         <Modal
           title="Rename document"

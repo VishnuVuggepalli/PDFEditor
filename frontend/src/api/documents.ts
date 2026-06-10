@@ -57,6 +57,25 @@ export function addAnnotations(
   );
 }
 
+/** Place a visual signature image (PNG/JPEG, ≤5 MB) on one page; the server
+ * fits it into rect (PDF points, lower-left origin) and creates a new
+ * version. Wire format: multipart form { image, page, rect: JSON array }. */
+export function stampSignature(
+  id: string,
+  page: number,
+  rect: readonly [number, number, number, number],
+  image: Blob,
+): Promise<DocumentRecord> {
+  const form = new FormData();
+  form.append('image', image, 'signature');
+  form.append('page', String(page));
+  form.append('rect', JSON.stringify(rect));
+  return request<DocumentRecord>(`/documents/${encodeURIComponent(id)}/stamp`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
 export function getFormFields(id: string): Promise<FormField[]> {
   return request<FormField[]>(`/documents/${encodeURIComponent(id)}/form`);
 }

@@ -62,4 +62,28 @@ describe('editorStore', () => {
     expect(store().past).toHaveLength(0);
     expect(store().zoom).toBe(150);
   });
+
+  it('signature stamps participate in history and clearPending', () => {
+    store().addStamp({ id: 's1', page: 2, rect: [10, 10, 110, 60], dataUrl: 'data:image/png;base64,AA==' });
+    expect(store().stamps).toHaveLength(1);
+    store().undo();
+    expect(store().stamps).toHaveLength(0);
+    store().redo();
+    expect(store().stamps).toHaveLength(1);
+    store().removeStamp('s1');
+    expect(store().stamps).toHaveLength(0);
+    store().undo();
+    store().clearPending();
+    expect(store().stamps).toHaveLength(0);
+  });
+
+  it('updateAnnot can replace the rect (text commit)', () => {
+    store().addAnnot({
+      id: 't1', type: 'text', page: 1, rect: [0, 0, 50, 20],
+      color: '#111827', contents: '', fontSize: 14,
+    });
+    store().updateAnnot('t1', { contents: 'hi', rect: [0, 0, 80, 24] });
+    expect(store().annots[0].contents).toBe('hi');
+    expect(store().annots[0].rect).toEqual([0, 0, 80, 24]);
+  });
 });

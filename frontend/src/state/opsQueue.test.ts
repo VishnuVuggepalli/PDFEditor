@@ -125,6 +125,14 @@ describe('countPendingOps', () => {
   it('is zero for a pristine document', () => {
     expect(countPendingOps(initPages(5), [])).toBe(0);
   });
+
+  it('counts queued signature stamps', () => {
+    const stamps = [
+      { id: 's1', page: 1, rect: [0, 0, 100, 50] as const, dataUrl: 'data:image/png;base64,AA==' },
+      { id: 's2', page: 2, rect: [0, 0, 100, 50] as const, dataUrl: 'data:image/png;base64,AA==' },
+    ];
+    expect(countPendingOps(initPages(3), [], stamps)).toBe(2);
+  });
 });
 
 describe('toAnnotationInputs', () => {
@@ -163,5 +171,58 @@ describe('toAnnotationInputs', () => {
     ]);
     // no client-only fields leak
     expect(Object.keys(wire[0])).not.toContain('id');
+  });
+
+  it('maps text, circle and line fields', () => {
+    const annots: PendingAnnotation[] = [
+      {
+        id: 't1',
+        type: 'text',
+        page: 1,
+        rect: [10, 700, 200, 730],
+        color: '#111827',
+        contents: 'hello',
+        fontSize: 17.6,
+        bg: '#ffffff',
+      },
+      {
+        id: 'c1',
+        type: 'circle',
+        page: 1,
+        rect: [50, 50, 150, 120],
+        color: '#2563eb',
+        borderWidth: 3,
+      },
+      {
+        id: 'l1',
+        type: 'line',
+        page: 2,
+        rect: [8, 8, 102, 32],
+        color: '#16a34a',
+        borderWidth: 2,
+        line: [10, 10, 100, 30],
+      },
+    ];
+    expect(toAnnotationInputs(annots)).toEqual([
+      {
+        type: 'text', page: 1, rect: [10, 700, 200, 730], color: '#111827',
+        contents: 'hello', fontSize: 18, bg: '#ffffff',
+      },
+      { type: 'circle', page: 1, rect: [50, 50, 150, 120], color: '#2563eb', borderWidth: 3 },
+      {
+        type: 'line', page: 2, rect: [8, 8, 102, 32], color: '#16a34a',
+        borderWidth: 2, line: [10, 10, 100, 30],
+      },
+    ]);
+  });
+
+  it('drops text annotations that were left empty', () => {
+    const annots: PendingAnnotation[] = [
+      { id: 't1', type: 'text', page: 1, rect: [0, 0, 10, 10], color: '#111827', contents: '  ', fontSize: 14 },
+      { id: 'h1', type: 'highlight', page: 1, rect: [0, 0, 10, 10], color: '#fde047' },
+    ];
+    const wire = toAnnotationInputs(annots);
+    expect(wire).toHaveLength(1);
+    expect(wire[0].type).toBe('highlight');
   });
 });

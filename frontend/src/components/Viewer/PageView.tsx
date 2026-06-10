@@ -2,9 +2,9 @@
  * overlay + search match marks. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PageHandle, PdfHandle } from '../../pdf/engine';
-import type { ViewportParams } from '../../pdf/coords';
+import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import { viewportSize } from '../../pdf/coords';
-import type { EditorPage, PendingAnnotation } from '../../state/opsQueue';
+import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
 import type { AnnotStyle, Tool } from '../../state/editorStore';
 import { AnnotationLayer } from './AnnotationLayer';
 
@@ -16,9 +16,13 @@ interface Props {
   style: AnnotStyle;
   readonly: boolean;
   annots: ReadonlyArray<PendingAnnotation>;
+  stamps: ReadonlyArray<PendingStamp>;
   onAdd: (a: PendingAnnotation) => void;
-  onUpdate: (id: string, patch: { contents?: string }) => void;
+  onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemove: (id: string) => void;
+  onRemoveStamp: (id: string) => void;
+  /** sign tool click: page (head-version numbering), PDF point, page viewBox */
+  onSign: (page: number, at: [number, number], viewBox: [number, number, number, number]) => void;
   searchQ: string;
   /** index of the active match within this page, or -1 */
   searchActiveLocal: number;
@@ -27,8 +31,9 @@ interface Props {
 
 export function PageView(props: Props) {
   const {
-    pdf, page, targetW, tool, style, readonly, annots,
-    onAdd, onUpdate, onRemove, searchQ, searchActiveLocal, registerNode,
+    pdf, page, targetW, tool, style, readonly, annots, stamps,
+    onAdd, onUpdate, onRemove, onRemoveStamp, onSign,
+    searchQ, searchActiveLocal, registerNode,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -136,12 +141,15 @@ export function PageView(props: Props) {
           height={size.height}
           pageOrigN={page.origN}
           annots={annots}
+          stamps={stamps}
           tool={tool}
           style={style}
           readonly={readonly}
           onAdd={onAdd}
           onUpdate={onUpdate}
           onRemove={onRemove}
+          onRemoveStamp={onRemoveStamp}
+          onSign={(at) => onSign(page.origN, at, vp.viewBox)}
         />
       )}
     </div>

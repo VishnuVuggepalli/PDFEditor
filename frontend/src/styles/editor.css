@@ -209,6 +209,9 @@ mark.hl.active { background: #f59e0b; box-shadow: 0 0 0 2px #f59e0b; }
 .annot-capture.tool-highlight { cursor: text; }
 .annot-capture.tool-draw { cursor: crosshair; }
 .annot-capture.tool-comment { cursor: copy; }
+.annot-capture.tool-shapes { cursor: crosshair; }
+.annot-capture.tool-text { cursor: text; }
+.annot-capture.tool-sign { cursor: copy; }
 
 .an-hl { position: absolute; border-radius: 2px; mix-blend-mode: multiply; opacity: .55; }
 .an-hl.draft { opacity: .4; outline: 1px dashed rgba(0,0,0,.25); }
@@ -262,6 +265,12 @@ mark.hl.active { background: #f59e0b; box-shadow: 0 0 0 2px #f59e0b; }
 .an-sign.type { font-family: 'Dancing Script', cursive; font-weight: 700; line-height: 1; display: flex; align-items: center; white-space: nowrap; }
 .an-x.floating { position: absolute; transform: translate(2px, -4px); pointer-events: auto; }
 
+/* pending signature image stamp */
+.an-stamp { position: absolute; pointer-events: none; }
+.an-stamp img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.an-stamp .an-x { position: absolute; top: -9px; right: -9px; width: 16px; height: 16px; border-radius: 99px; background: #111827; color: #fff; border: 2px solid #fff; display: grid; place-items: center; pointer-events: auto; opacity: 0; transition: opacity .12s; }
+.an-stamp:hover .an-x { opacity: 1; }
+
 /* form fill inputs */
 .pc-fill { width: 100%; height: 34px; border: 1px solid transparent; border-radius: 4px; background: transparent; font-family: ui-sans-serif, sans-serif; font-size: 13px; color: #1f2430; padding: 0 10px; outline: none; }
 .pc-fill:disabled { -webkit-text-fill-color: #1f2430; color: #1f2430; opacity: 1; cursor: default; }
@@ -291,3 +300,14 @@ mark.hl.active { background: #f59e0b; box-shadow: 0 0 0 2px #f59e0b; }
 .sig-colors { display: flex; gap: 8px; margin-top: 14px; }
 .sig-sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
 .sig-sw.on { border-color: var(--text); }
+.sig-upload { border: 1px dashed var(--border-strong); border-radius: var(--r-md); background: var(--bg-sunken); min-height: 150px; display: grid; place-items: center; }
+.sig-drop { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; cursor: pointer; padding: 24px; }
+.sig-drop input[type=file] { display: none; }
+.sig-img-preview { position: relative; width: 100%; min-height: 150px; display: grid; place-items: center; padding: 12px; }
+.sig-img-preview img { max-width: 100%; max-height: 180px; object-fit: contain; }
+.sig-cert { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 14px; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-sunken); color: var(--text-3); font-size: 12.5px; font-weight: 500; cursor: not-allowed; }
+
+/* forms empty state */
+.forms-empty { padding: 18px 6px; color: var(--text-2); }
+.forms-empty .fe-title { font-weight: 700; color: var(--text); margin-bottom: 6px; font-size: 13.5px; }
+.forms-empty p { font-size: 12.5px; line-height: 1.55; color: var(--text-3); margin: 0; }

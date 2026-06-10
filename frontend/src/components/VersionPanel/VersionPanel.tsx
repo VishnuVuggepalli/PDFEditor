@@ -57,19 +57,17 @@ export function VersionPanel(props: Props) {
               <Icon name="clock" />
             </button>
           </Tip>
-          {hasForm && (
-            <Tip label="Forms" pos="bottom">
-              <button
-                className="iconbtn"
-                onClick={() => {
-                  setCollapsed(false);
-                  setTab('forms');
-                }}
-              >
-                <Icon name="forms" />
-              </button>
-            </Tip>
-          )}
+          <Tip label="Forms" pos="bottom">
+            <button
+              className="iconbtn"
+              onClick={() => {
+                setCollapsed(false);
+                setTab('forms');
+              }}
+            >
+              <Icon name="forms" />
+            </button>
+          </Tip>
         </div>
       </aside>
     );
@@ -86,11 +84,9 @@ export function VersionPanel(props: Props) {
         >
           Versions
         </button>
-        {hasForm && (
-          <button className={`rp-tab ${tab === 'forms' ? 'on' : ''}`} onClick={() => setTab('forms')}>
-            Forms
-          </button>
-        )}
+        <button className={`rp-tab ${tab === 'forms' ? 'on' : ''}`} onClick={() => setTab('forms')}>
+          Forms
+        </button>
         <Tip label="Collapse" pos="bottom">
           <button className="iconbtn rp-collapse" onClick={() => setCollapsed(true)}>
             <Icon name="chevRight" />
@@ -108,8 +104,8 @@ export function VersionPanel(props: Props) {
             onRestore={onRestore}
           />
         )}
-        {tab === 'forms' && hasForm && (
-          <FormsTab docId={meta.document.id} readonly={viewing != null} />
+        {tab === 'forms' && (
+          <FormsTab docId={meta.document.id} hasForm={hasForm} readonly={viewing != null} />
         )}
       </div>
     </aside>

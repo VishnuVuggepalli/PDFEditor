@@ -47,7 +47,14 @@ export type PageOp =
   | { type: 'delete'; pages: number[] }
   | { type: 'reorder'; order: number[] };
 
-export type AnnotationType = 'highlight' | 'note' | 'square' | 'ink';
+export type AnnotationType =
+  | 'highlight'
+  | 'note'
+  | 'square'
+  | 'ink'
+  | 'text'
+  | 'circle'
+  | 'line';
 
 /** One annotation as accepted by POST /documents/{id}/annotations.
  * Rect is in PDF points with a lower-left origin. */
@@ -60,4 +67,12 @@ export interface AnnotationInput {
   opacity?: number;
   /** ink only: strokes as flat x,y pairs */
   paths?: number[][];
+  /** text only: font size in PDF points (backend whitelist 8..72) */
+  fontSize?: number;
+  /** text only: optional background color */
+  bg?: string;
+  /** text/square/circle/line: stroke width in points */
+  borderWidth?: number;
+  /** line only: [x1,y1,x2,y2] endpoints in PDF points */
+  line?: number[];
 }

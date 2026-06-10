@@ -52,9 +52,9 @@ export function EditorToolbar(props: Props) {
     { id: 'comment', label: 'Comment', icon: 'comment', enabled: true },
     { id: 'draw', label: 'Draw', icon: 'pen', enabled: true },
     { id: 'shapes', label: 'Shapes', icon: 'shapes', enabled: true },
-    { id: 'text', label: 'Text', icon: 'text', enabled: false, sub: 'coming soon' },
-    { id: 'sign', label: 'Sign', icon: 'sign', enabled: false, sub: 'coming soon' },
-    { id: 'forms', label: 'Forms', icon: 'forms', enabled: hasForm, sub: hasForm ? '' : 'no form fields' },
+    { id: 'text', label: 'Text', icon: 'text', enabled: true },
+    { id: 'sign', label: 'Sign', icon: 'sign', enabled: true },
+    { id: 'forms', label: 'Forms', icon: 'forms', enabled: true, sub: hasForm ? '' : 'no form fields' },
   ];
 
   return (
