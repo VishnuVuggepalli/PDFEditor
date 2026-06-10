@@ -9,16 +9,8 @@
 
 import type * as MU from 'mupdf';
 import type { ClientMessage, MupdfRequest, WorkerMessage } from './mupdfProtocol';
-import {
-  approxBaseline,
-  base14FontName,
-  buildEditContentStream,
-  displayMatrix,
-  rgbToRgba,
-  stextLines,
-  type Mat,
-  type StextJson,
-} from './mupdfTransforms';
+import { approxBaseline, base14FontName, buildEditContentStream } from './mupdfTransforms';
+import { readPageInfo, readTextLines, renderPageRgba } from './mupdfPageOps';
 import type { TextSpanInfo } from './engineApi';
 
 type Mupdf = typeof MU;
@@ -78,23 +70,6 @@ function getPage(entry: OpenDoc, n: number): MU.PDFPage {
   return p;
 }
 
-/** Read the page's CropBox (fallback MediaBox) as a normalized viewBox. */
-function readViewBox(obj: MU.PDFObject): [number, number, number, number] | null {
-  for (const key of ['CropBox', 'MediaBox']) {
-    const box = obj.getInheritable(key);
-    if (box.isArray() && box.length === 4) {
-      const v = [0, 1, 2, 3].map((i) => box.get(i).asNumber());
-      return [
-        Math.min(v[0], v[2]),
-        Math.min(v[1], v[3]),
-        Math.max(v[0], v[2]),
-        Math.max(v[1], v[3]),
-      ];
-    }
-  }
-  return null;
-}
-
 /* ---- request handlers ---- */
 
 interface Handled {
@@ -129,46 +104,20 @@ async function handle(req: MupdfRequest): Promise<Handled> {
 
     case 'pageInfo': {
       const page = getPage(getDoc(req.docId), req.page);
-      const b = page.getBounds();
-      const obj = page.getObject();
-      const rotate = obj.getInheritable('Rotate');
-      const baseRotation = rotate.isNumber() ? ((rotate.asNumber() % 360) + 360) % 360 : 0;
-      return {
-        result: {
-          baseRotation,
-          viewBox: readViewBox(obj) ?? [0, 0, b[2] - b[0], b[3] - b[1]],
-          bounds: [b[0], b[1], b[2], b[3]],
-          pageTransform: page.getTransform() as Mat,
-        },
-        transfer: [],
-      };
+      return { result: readPageInfo(page), transfer: [] };
     }
 
     case 'render': {
       const mu = await loadMupdf();
       const page = getPage(getDoc(req.docId), req.page);
       // fitz page space already includes /Rotate; only the pending delta rotates.
-      const m = displayMatrix(req.scale, req.extraRotation);
-      const pix = page.toPixmap(m as MU.Matrix, mu.ColorSpace.DeviceRGB, false, true);
-      try {
-        const width = pix.getWidth();
-        const height = pix.getHeight();
-        const rgba = rgbToRgba(pix.getPixels(), width, height, pix.getStride());
-        return { result: { pixels: rgba.buffer, width, height }, transfer: [rgba.buffer] };
-      } finally {
-        pix.destroy();
-      }
+      const { pixels, width, height } = renderPageRgba(mu, page, req.scale, req.extraRotation);
+      return { result: { pixels: pixels.buffer, width, height }, transfer: [pixels.buffer] };
     }
 
     case 'textLines': {
       const page = getPage(getDoc(req.docId), req.page);
-      const st = page.toStructuredText('preserve-spans');
-      try {
-        const json = JSON.parse(st.asJSON()) as StextJson;
-        return { result: { lines: stextLines(json) }, transfer: [] };
-      } finally {
-        st.destroy();
-      }
+      return { result: { lines: readTextLines(page) }, transfer: [] };
     }
 
     case 'replaceText': {
