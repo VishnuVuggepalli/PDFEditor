@@ -114,13 +114,17 @@ export function Viewer(props: Props) {
     if (!search.open || !search.q.trim()) return;
     let alive = true;
     void (async () => {
-      const texts: Record<number, string> = {};
-      for (const p of visible) {
-        const h = await pdf.page(p.origN);
-        texts[p.origN] = (await h.text()).toLowerCase();
-        if (!alive) return;
+      try {
+        const texts: Record<number, string> = {};
+        for (const p of visible) {
+          const h = await pdf.page(p.origN);
+          texts[p.origN] = (await h.text()).toLowerCase();
+          if (!alive) return;
+        }
+        if (alive) setPageTexts(texts);
+      } catch {
+        // document was destroyed mid-extraction; search simply has no counts
       }
-      if (alive) setPageTexts(texts);
     })();
     return () => {
       alive = false;

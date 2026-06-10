@@ -38,9 +38,14 @@ export function PageView(props: Props) {
 
   useEffect(() => {
     let alive = true;
-    void pdf.page(page.origN).then((h) => {
-      if (alive) setHandle(h);
-    });
+    pdf
+      .page(page.origN)
+      .then((h) => {
+        if (alive) setHandle(h);
+      })
+      .catch(() => {
+        // document was destroyed mid-load (navigation/teardown)
+      });
     return () => {
       alive = false;
     };
