@@ -17,8 +17,18 @@ services:
       - "8800:8000"
     restart: unless-stopped
 
-  # frontend service added when the frontend scaffold lands:
-  #   build: ./frontend  → nginx serving the React build, proxying /api
+  frontend:
+    build:
+      context: ./frontend
+      # host network during build: the default bridge cannot resolve
+      # the npm registry in this environment
+      network: host
+    ports:
+      # host 8880 → nginx serving the React build, proxying /api → backend
+      - "8880:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 networks:
   default:
