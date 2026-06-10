@@ -342,6 +342,15 @@ mark.hl.active { background: #f59e0b; box-shadow: 0 0 0 2px #f59e0b; }
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: var(--accent); pointer-events: none;
 }
+/* Exotic-font affordance: the edit strategy will substitute a metric-matched
+   standard face. Amber chip pinned under the editing box; hidden while busy. */
+.inline-edit .ie-hint {
+  position: absolute; top: calc(100% + 4px); left: 0; white-space: nowrap;
+  font-size: 11px; font-weight: 650; line-height: 1; padding: 4px 7px;
+  border-radius: 4px; background: #fffbeb; color: #92400e;
+  border: 1px solid #fcd34d; box-shadow: 0 2px 8px rgba(16, 24, 40, .14);
+  pointer-events: none;
+}
 
 /* ===== in-place image edit (mupdf engine, Select tool) ===== */
 /* Selection box + corner handles + floating toolbar live inside the sheet,

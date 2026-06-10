@@ -8,6 +8,7 @@
 import { useEffect, useRef } from 'react';
 import type { TextSpanInfo } from '../../pdf/engineApi';
 import type { ViewportParams } from '../../pdf/coords';
+import { fontSubstitutionExpected } from '../../pdf/mupdfFonts';
 import { normalizeEditedText, overlayPlacement } from '../../pdf/overlay';
 import { Icon } from '../shared/Icon';
 
@@ -53,6 +54,16 @@ export function InlineTextEdit({ span, vp, busy, onCommit, onCancel }: Props) {
 
   const p = overlayPlacement(span.bbox, span.fontSize, vp);
 
+  // Exotic-font affordance: when the edit strategy will (or, for covered
+  // embedded programs, may) substitute a metric-matched standard face for
+  // the original font, say so up front instead of surprising on commit.
+  const fontApproximated = fontSubstitutionExpected({
+    name: span.fontName,
+    family: span.fontFamily,
+    weight: span.fontWeight,
+    style: span.fontStyle,
+  });
+
   return (
     <div
       className={`inline-edit${busy ? ' busy' : ''}`}
@@ -89,6 +100,11 @@ export function InlineTextEdit({ span, vp, busy, onCommit, onCancel }: Props) {
         }}
         onBlur={() => settle(true)}
       />
+      {fontApproximated && !busy && (
+        <span className="ie-hint" role="note">
+          Font will be approximated
+        </span>
+      )}
       {busy && (
         <span className="ie-spinner" role="status" aria-label="Saving edit">
           <Icon name="loader" size={Math.min(18, Math.max(12, p.height - 4))} className="spin" />

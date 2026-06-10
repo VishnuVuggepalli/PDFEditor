@@ -90,6 +90,27 @@ describe('InlineTextEdit', () => {
     expect(b.onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('shows no font hint for a standard-14 font', () => {
+    const { container, queryByRole } = setup(); // SPAN uses Helvetica
+    expect(queryByRole('note')).toBeNull();
+    expect(container.querySelector('.ie-hint')).toBeNull();
+  });
+
+  it('shows the approximation hint for an exotic font', () => {
+    const { getByRole } = setup({
+      span: { ...SPAN, fontName: 'ABCDEF+DroidSansFallback' },
+    });
+    expect(getByRole('note')).toHaveTextContent('Font will be approximated');
+  });
+
+  it('hides the font hint while the edit is in flight', () => {
+    const { queryByRole } = setup({
+      span: { ...SPAN, fontName: 'ABCDEF+DroidSansFallback' },
+      busy: true,
+    });
+    expect(queryByRole('note')).toBeNull();
+  });
+
   it('busy: shows the spinner, disables editing, and ignores keys/blur', () => {
     const { input, onCommit, onCancel, getByRole, container } = setup({ busy: true });
     expect(getByRole('status')).toBeInTheDocument();

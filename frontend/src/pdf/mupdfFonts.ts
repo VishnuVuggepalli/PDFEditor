@@ -76,6 +76,18 @@ export function editCodepoints(text: string): number[] {
   return [...out];
 }
 
+/** Pure pre-edit prediction: will an edit of text in this font be drawn in
+ * a substituted (metrically approximated) face? True whenever the span's
+ * font is not itself a standard-14 face, i.e. whenever the base14 path of
+ * the strategy would pick a different name. Conservative on purpose: the
+ * edit can still turn out exact when the original embedded program covers
+ * the replacement text (mupdfEdit strategy 1), which only the worker can
+ * prove — but it can never be WORSE than this prediction, so the UI hint
+ * driven by it may over-warn and never under-warns. */
+export function fontSubstitutionExpected(font: SpanFontDesc): boolean {
+  return pickBase14(font) !== stripSubsetPrefix(font.name);
+}
+
 /** Choose the standard-14 font for a span: exact standard-14 names pass
  * through unchanged; otherwise classify by name hints + stext family with
  * the line's real bold/italic flags. Deterministic. */

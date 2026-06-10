@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { editCodepoints, hasSubsetPrefix, pickBase14, stripSubsetPrefix } from './mupdfFonts';
+import {
+  editCodepoints,
+  fontSubstitutionExpected,
+  hasSubsetPrefix,
+  pickBase14,
+  stripSubsetPrefix,
+} from './mupdfFonts';
 
 describe('subset prefix handling', () => {
   it('strips the six-letter subset tag', () => {
@@ -59,6 +65,31 @@ describe('pickBase14', () => {
     const s = span('DejaVuSerif-Bold', 'serif', 'bold');
     expect(pickBase14(s)).toBe(pickBase14(s));
     expect(pickBase14(s)).toBe('Times-Bold');
+  });
+});
+
+describe('fontSubstitutionExpected', () => {
+  const span = (name: string, family = 'sans-serif', weight = 'normal', style = 'normal') => ({
+    name,
+    family,
+    weight,
+    style,
+  });
+
+  it('is false for standard-14 faces, including subset-tagged ones', () => {
+    expect(fontSubstitutionExpected(span('Helvetica'))).toBe(false);
+    expect(fontSubstitutionExpected(span('ABCDEF+Helvetica'))).toBe(false);
+    expect(fontSubstitutionExpected(span('Times-Bold', 'serif', 'bold'))).toBe(false);
+    expect(fontSubstitutionExpected(span('Courier-Oblique', 'monospace', 'normal', 'italic'))).toBe(
+      false,
+    );
+  });
+
+  it('is true for metric clones and exotic faces (a different face is drawn)', () => {
+    expect(fontSubstitutionExpected(span('ArialMT'))).toBe(true);
+    expect(fontSubstitutionExpected(span('ABCDEF+TimesNewRomanPSMT', 'serif'))).toBe(true);
+    expect(fontSubstitutionExpected(span('QOGDZQ+DroidSansFallback'))).toBe(true);
+    expect(fontSubstitutionExpected(span('Lato-Black'))).toBe(true);
   });
 });
 
