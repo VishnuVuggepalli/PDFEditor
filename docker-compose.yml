@@ -1,6 +1,10 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      # host network during build: the default bridge cannot resolve
+      # proxy.golang.org in this environment
+      network: host
     environment:
       PORT: "8000"
       DATA_DIR: /app/data
@@ -9,8 +13,17 @@ services:
       # ALL state lives here on the host — containers stay disposable.
       - ./data:/app/data
     ports:
-      - "8000:8000"
+      # host 8800 (8000 is taken by another service on this box)
+      - "8800:8000"
     restart: unless-stopped
 
   # frontend service added when the frontend scaffold lands:
   #   build: ./frontend  → nginx serving the React build, proxying /api
+
+networks:
+  default:
+    ipam:
+      config:
+        # pinned: docker's default 172.17-172.20 pools collide with VPN (tun0)
+        # routes on this host, blackholing container traffic
+        - subnet: 172.28.0.0/24
