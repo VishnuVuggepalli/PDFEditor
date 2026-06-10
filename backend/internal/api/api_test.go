@@ -27,7 +27,7 @@ func newTestServer(t *testing.T) *gin.Engine {
 		t.Fatalf("store: %v", err)
 	}
 	svc := document.NewService(st, pdf.NewEngine())
-	return NewRouter(NewHandlers(svc, 10<<20))
+	return NewRouter(NewHandlers(svc, 10<<20), []string{"http://localhost:8880"})
 }
 
 func fixture(t *testing.T) []byte {

@@ -44,12 +44,16 @@ func run() error {
 	h := api.NewHandlers(svc, cfg.MaxUploadBytes())
 	// Thumbnail cache lives inside each document's dir: {dataDir}/documents/{id}/thumbs.
 	h.SetThumbs(document.NewThumbService(svc, raster.New(), filepath.Join(cfg.DataDir, "documents")))
-	router := api.NewRouter(h)
+	router := api.NewRouter(h, cfg.AllowedOrigins)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Uploads can be slow but must be bounded; reads (incl. body) get 5m.
+		ReadTimeout:  5 * time.Minute,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -8,9 +8,11 @@ import (
 )
 
 // NewRouter builds the Gin engine with middleware and all v1 routes.
-func NewRouter(h *Handlers) *gin.Engine {
+// allowedOrigins is the CORS allowlist; requests from other origins get no
+// CORS headers (same-origin traffic through the nginx proxy is unaffected).
+func NewRouter(h *Handlers, allowedOrigins []string) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Recovery(), requestLogger(), cors())
+	r.Use(gin.Recovery(), requestLogger(), cors(allowedOrigins))
 
 	r.GET("/healthz", func(c *gin.Context) { c.String(200, "ok") })
 
@@ -51,13 +53,22 @@ func requestLogger() gin.HandlerFunc {
 	}
 }
 
-// cors allows the Vite dev server origin; same-origin in production via the
-// nginx proxy, so a permissive policy here is acceptable for this project.
-func cors() gin.HandlerFunc {
+// cors echoes the request Origin back only when it is on the allowlist
+// (exact match), instead of a wildcard. Vary: Origin is always set so caches
+// never serve one origin's CORS response to another.
+func cors(allowedOrigins []string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		allowed[o] = struct{}{}
+	}
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type")
+		c.Header("Vary", "Origin")
+		origin := c.GetHeader("Origin")
+		if _, ok := allowed[origin]; ok {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type")
+		}
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return

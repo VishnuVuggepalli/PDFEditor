@@ -35,7 +35,7 @@ func newThumbServer(t *testing.T) (*gin.Engine, string) {
 	svc := document.NewService(st, pdf.NewEngine())
 	h := NewHandlers(svc, 10<<20)
 	h.SetThumbs(document.NewThumbService(svc, raster.New(), filepath.Join(dataDir, "documents")))
-	return NewRouter(h), dataDir
+	return NewRouter(h, []string{"http://localhost:8880"}), dataDir
 }
 
 func getThumb(r *gin.Engine, url string) *httptest.ResponseRecorder {

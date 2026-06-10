@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestLoadDefaults(t *testing.T) {
 	cfg, err := Load()
@@ -12,6 +15,34 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.MaxUploadBytes() != 50<<20 {
 		t.Errorf("MaxUploadBytes: %d", cfg.MaxUploadBytes())
+	}
+	wantOrigins := []string{"http://localhost:8880", "http://localhost:5199"}
+	if !reflect.DeepEqual(cfg.AllowedOrigins, wantOrigins) {
+		t.Errorf("AllowedOrigins default: want %v, got %v", wantOrigins, cfg.AllowedOrigins)
+	}
+}
+
+func TestLoadAllowedOrigins(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want []string
+	}{
+		{"single origin", "https://pdf.example.com", []string{"https://pdf.example.com"}},
+		{"multiple with spaces", " https://a.example , https://b.example ", []string{"https://a.example", "https://b.example"}},
+		{"empty entries dropped", "https://a.example,,", []string{"https://a.example"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ALLOWED_ORIGINS", tt.env)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.AllowedOrigins, tt.want) {
+				t.Errorf("want %v, got %v", tt.want, cfg.AllowedOrigins)
+			}
+		})
 	}
 }
 
