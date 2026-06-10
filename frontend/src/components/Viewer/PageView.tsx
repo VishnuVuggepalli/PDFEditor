@@ -5,6 +5,7 @@ import type { PageHandle, PdfHandle } from '../../pdf/engine';
 import { canEditText, type TextSpanInfo } from '../../pdf/engineApi';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import { viewportSize, viewportToPdfPoint } from '../../pdf/coords';
+import { applySearchMarks } from '../../pdf/searchMarks';
 import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
 import type { AnnotStyle, Tool } from '../../state/editorStore';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -91,44 +92,13 @@ export function PageView(props: Props) {
     };
   }, [handle, vp, page.rotDelta]);
 
-  // Search marks: post-process text layer spans.
+  // Search marks: post-process text layer spans (searchMarks.ts; handles
+  // matches that cross line/span boundaries with per-line precise marks).
   useEffect(() => {
     const container = textRef.current;
     if (!container) return;
-    const spans = container.querySelectorAll<HTMLElement>(':scope > span');
-    let local = 0;
-    let activeEl: HTMLElement | null = null;
-    const q = searchQ.trim().toLowerCase();
-    spans.forEach((span) => {
-      const original = span.dataset.t ?? span.textContent ?? '';
-      span.dataset.t = original;
-      if (!q) {
-        if (span.childElementCount > 0) span.replaceChildren(document.createTextNode(original));
-        return;
-      }
-      const lower = original.toLowerCase();
-      if (!lower.includes(q)) {
-        if (span.childElementCount > 0) span.replaceChildren(document.createTextNode(original));
-        return;
-      }
-      const frag = document.createDocumentFragment();
-      let pos = 0;
-      for (;;) {
-        const idx = lower.indexOf(q, pos);
-        if (idx === -1) break;
-        if (idx > pos) frag.appendChild(document.createTextNode(original.slice(pos, idx)));
-        const mark = document.createElement('mark');
-        mark.className = 'hl' + (local === searchActiveLocal ? ' active' : '');
-        if (local === searchActiveLocal) activeEl = mark;
-        mark.textContent = original.slice(idx, idx + q.length);
-        frag.appendChild(mark);
-        local += 1;
-        pos = idx + q.length;
-      }
-      if (pos < original.length) frag.appendChild(document.createTextNode(original.slice(pos)));
-      span.replaceChildren(frag);
-    });
-    if (activeEl) (activeEl as HTMLElement).scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const activeEl = applySearchMarks(container, searchQ, searchActiveLocal);
+    if (activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [searchQ, searchActiveLocal, textEpoch]);
 
   const size = vp ? viewportSize(vp) : { width: targetW, height: targetW * (11 / 8.5) };
