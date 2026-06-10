@@ -19,6 +19,8 @@ func NewRouter(h *Handlers) *gin.Engine {
 		v1.POST("/documents", h.Upload)
 		v1.GET("/documents", h.List)
 		v1.GET("/documents/:id", h.Download)
+		v1.PATCH("/documents/:id", h.Rename)
+		v1.DELETE("/documents/:id", h.Delete)
 		v1.GET("/documents/:id/meta", h.Meta)
 		v1.GET("/documents/:id/versions", h.ListVersions)
 		v1.GET("/documents/:id/versions/:n", h.DownloadVersion)
@@ -52,7 +54,7 @@ func requestLogger() gin.HandlerFunc {
 func cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

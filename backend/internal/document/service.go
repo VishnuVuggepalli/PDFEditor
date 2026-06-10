@@ -18,6 +18,10 @@ type Store interface {
 	VersionBytes(ctx context.Context, id string, n int) ([]byte, error)
 	// AddVersion appends pdf as a new head version with an operation summary.
 	AddVersion(ctx context.Context, id string, pdf []byte, ops string) (*Document, error)
+	// Rename updates the document's display name.
+	Rename(ctx context.Context, id string, name string) (*Document, error)
+	// Delete removes the document and all of its versions.
+	Delete(ctx context.Context, id string) error
 }
 
 // Engine is what the service needs from a PDF engine. Implemented by
@@ -112,6 +116,26 @@ func (s *Service) Meta(ctx context.Context, id string) (*Meta, error) {
 		return nil, fmt.Errorf("read pdf info: %w", err)
 	}
 	return &Meta{Document: *doc, PDF: info}, nil
+}
+
+// Rename updates a document's display name.
+func (s *Service) Rename(ctx context.Context, id string, name string) (*Document, error) {
+	if name == "" {
+		return nil, fmt.Errorf("%w: empty name", ErrInvalidInput)
+	}
+	doc, err := s.store.Rename(ctx, id, name)
+	if err != nil {
+		return nil, fmt.Errorf("rename document: %w", err)
+	}
+	return doc, nil
+}
+
+// Delete removes a document and its entire version history.
+func (s *Service) Delete(ctx context.Context, id string) error {
+	if err := s.store.Delete(ctx, id); err != nil {
+		return fmt.Errorf("delete document: %w", err)
+	}
+	return nil
 }
 
 // RestoreVersion copies version n's bytes as a new head version.

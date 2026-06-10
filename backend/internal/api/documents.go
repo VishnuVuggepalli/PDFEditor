@@ -68,6 +68,35 @@ func (h *Handlers) Download(c *gin.Context) {
 	c.Data(http.StatusOK, "application/pdf", b)
 }
 
+// renameRequest is the body for PATCH /api/v1/documents/:id.
+type renameRequest struct {
+	Name string `json:"name"`
+}
+
+// Rename handles PATCH /api/v1/documents/:id — updates the display name.
+func (h *Handlers) Rename(c *gin.Context) {
+	var req renameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, fmt.Errorf("%w: body must be JSON {\"name\": string}: %v", document.ErrInvalidInput, err))
+		return
+	}
+	doc, err := h.svc.Rename(c.Request.Context(), c.Param("id"), req.Name)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, doc)
+}
+
+// Delete handles DELETE /api/v1/documents/:id.
+func (h *Handlers) Delete(c *gin.Context) {
+	if err := h.svc.Delete(c.Request.Context(), c.Param("id")); err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, gin.H{"deleted": c.Param("id")})
+}
+
 // Meta handles GET /api/v1/documents/:id/meta.
 func (h *Handlers) Meta(c *gin.Context) {
 	meta, err := h.svc.Meta(c.Request.Context(), c.Param("id"))

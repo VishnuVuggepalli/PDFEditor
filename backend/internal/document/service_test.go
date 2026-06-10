@@ -64,6 +64,23 @@ func (f *fakeStore) AddVersion(_ context.Context, id string, pdf []byte, ops str
 	return d, nil
 }
 
+func (f *fakeStore) Rename(_ context.Context, id string, name string) (*Document, error) {
+	d, ok := f.docs[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	d.Name = name
+	return d, nil
+}
+
+func (f *fakeStore) Delete(_ context.Context, id string) error {
+	if _, ok := f.docs[id]; !ok {
+		return ErrNotFound
+	}
+	delete(f.docs, id)
+	return nil
+}
+
 // fakeEngine validates by prefix, returns canned info, and records page ops
 // by appending markers to the bytes.
 type fakeEngine struct {

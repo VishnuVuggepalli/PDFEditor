@@ -220,6 +220,41 @@ func (s *FSStore) AddVersion(ctx context.Context, id string, pdf []byte, ops str
 	return copyDoc(next), nil
 }
 
+// Rename updates the document's display name, persisting meta.json atomically.
+func (s *FSStore) Rename(ctx context.Context, id string, name string) (*document.Document, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cur, ok := s.index[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", document.ErrNotFound, id)
+	}
+
+	// Build an updated copy; the indexed record is replaced, never mutated.
+	next := copyDoc(cur)
+	next.Name = name
+	if err := s.writeMetaAtomic(next); err != nil {
+		return nil, err
+	}
+	s.index[id] = next
+	return copyDoc(next), nil
+}
+
+// Delete removes the document directory and drops it from the index.
+func (s *FSStore) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.index[id]; !ok {
+		return fmt.Errorf("%w: %s", document.ErrNotFound, id)
+	}
+	if err := os.RemoveAll(s.docDir(id)); err != nil {
+		return fmt.Errorf("remove doc dir %s: %w", id, err)
+	}
+	delete(s.index, id)
+	return nil
+}
+
 // copyDoc returns a deep copy so callers can never mutate indexed state.
 func copyDoc(d *document.Document) *document.Document {
 	cp := *d
