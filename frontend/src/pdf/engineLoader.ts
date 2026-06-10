@@ -1,7 +1,8 @@
 /** Engine selection behind the VITE_PDF_ENGINE feature flag.
  *
- * - 'pdfjs': the proven pdf.js engine.
- * - 'mupdf': the mupdf-WASM engine (adds in-place text editing).
+ * - 'mupdf' (default): the mupdf-WASM engine (adds in-place text editing).
+ * - 'pdfjs': the proven pdf.js engine, kept fully functional as the
+ *   compatibility fallback (set VITE_PDF_ENGINE=pdfjs to flip back).
  *
  * Both engines are loaded via dynamic import so the unused one never ships
  * to the browser; the mupdf wasm (~3.4 MB brotli) is a separate async chunk.
@@ -37,7 +38,7 @@ export function configuredEngine(): PdfEngineName {
   } catch {
     // no window/localStorage (tests, exotic privacy modes): use build default
   }
-  return import.meta.env.VITE_PDF_ENGINE === 'mupdf' ? 'mupdf' : 'pdfjs';
+  return import.meta.env.VITE_PDF_ENGINE === 'pdfjs' ? 'pdfjs' : 'mupdf';
 }
 
 /** Persist (or clear) the runtime engine override. Takes effect on the next

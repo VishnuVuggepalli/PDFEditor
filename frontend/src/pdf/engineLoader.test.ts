@@ -19,19 +19,19 @@ afterEach(() => {
 });
 
 describe('configuredEngine', () => {
-  it('defaults to pdfjs', () => {
+  it('defaults to mupdf', () => {
     vi.stubEnv('VITE_PDF_ENGINE', undefined);
-    expect(configuredEngine()).toBe('pdfjs');
-  });
-
-  it('treats unknown values as pdfjs', () => {
-    vi.stubEnv('VITE_PDF_ENGINE', 'acrobat');
-    expect(configuredEngine()).toBe('pdfjs');
-  });
-
-  it('selects mupdf when flagged', () => {
-    vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
     expect(configuredEngine()).toBe('mupdf');
+  });
+
+  it('treats unknown values as the mupdf default', () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'acrobat');
+    expect(configuredEngine()).toBe('mupdf');
+  });
+
+  it('selects pdfjs when flagged', () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
+    expect(configuredEngine()).toBe('pdfjs');
   });
 });
 
@@ -73,18 +73,18 @@ describe('runtime overrides', () => {
 });
 
 describe('loadPdf dispatch', () => {
-  it('routes to the pdf.js engine by default', async () => {
+  it('routes to the mupdf engine by default', async () => {
     vi.stubEnv('VITE_PDF_ENGINE', undefined);
-    await loadPdf('/doc.pdf');
-    expect(pdfjsLoad).toHaveBeenCalledWith('/doc.pdf');
-    expect(mupdfLoad).not.toHaveBeenCalled();
-  });
-
-  it('routes to the mupdf engine when flagged', async () => {
-    vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
     await loadPdf('/doc.pdf');
     expect(mupdfLoad).toHaveBeenCalledWith('/doc.pdf');
     expect(pdfjsLoad).not.toHaveBeenCalled();
+  });
+
+  it('routes to the pdf.js engine when flagged', async () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
+    await loadPdf('/doc.pdf');
+    expect(pdfjsLoad).toHaveBeenCalledWith('/doc.pdf');
+    expect(mupdfLoad).not.toHaveBeenCalled();
   });
 });
 
