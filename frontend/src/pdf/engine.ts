@@ -4,6 +4,7 @@
 import { getDocument, TextLayer } from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { ensureWorker } from './worker';
+import { canvasScaleFactor } from './renderScale';
 import type { ViewportParams } from './coords';
 
 export interface PageHandle {
@@ -69,9 +70,11 @@ class Page implements PageHandle {
     });
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('canvas 2d context unavailable');
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(viewport.width * dpr);
-    canvas.height = Math.floor(viewport.height * dpr);
+    // Supersampled backing store: at least 1.5 device px per CSS px (see
+    // renderScale.ts) — CSS scales the canvas back down to viewport size.
+    const factor = canvasScaleFactor(window.devicePixelRatio);
+    canvas.width = Math.floor(viewport.width * factor);
+    canvas.height = Math.floor(viewport.height * factor);
     canvas.style.width = `${viewport.width}px`;
     canvas.style.height = `${viewport.height}px`;
     const prev = this.renderTasks.get(canvas);
@@ -79,7 +82,7 @@ class Page implements PageHandle {
     const task = this.proxy.render({
       canvasContext: ctx,
       viewport,
-      transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+      transform: factor === 1 ? undefined : [factor, 0, 0, factor, 0, 0],
     });
     this.renderTasks.set(canvas, task);
     try {
