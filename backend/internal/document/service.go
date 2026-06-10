@@ -53,6 +53,11 @@ type Engine interface {
 	FormFields(pdf []byte) ([]FormField, error)
 	// FillForm sets field values keyed by field ID or name.
 	FillForm(pdf []byte, values map[string]string) ([]byte, error)
+	// AddFormFields creates new AcroForm fields (pre-validated) on existing pages.
+	AddFormFields(pdf []byte, fields []NewFormField) ([]byte, error)
+	// InsertBlankPages inserts count blank pages before or after the given
+	// 1-based page. An empty size matches that page's dimensions.
+	InsertBlankPages(pdf []byte, page int, before bool, count int, size string) ([]byte, error)
 }
 
 // MaxNameBytes caps document display names (bytes, not runes): long enough
@@ -75,6 +80,10 @@ func validateName(name string) error {
 type Service struct {
 	store  Store
 	engine Engine
+
+	// Optional digital-signing dependencies; see SetSigning in sign.go.
+	signer       Signer
+	sigValidator SignatureValidator
 }
 
 // NewService wires a Service from its dependencies.

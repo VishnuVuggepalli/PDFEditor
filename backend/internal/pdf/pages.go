@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/document"
 )
@@ -69,6 +71,35 @@ func (e *Engine) ExtractPages(pdf []byte, pages []int) ([]byte, error) {
 		return nil, fmt.Errorf("pdfcpu trim: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// InsertBlankPages inserts count blank pages before (or after) the given
+// 1-based page. size names a pdfcpu paper size ("A4", "Letter", …); empty
+// inherits the dimensions of the page at the insertion point.
+func (e *Engine) InsertBlankPages(pdf []byte, page int, before bool, count int, size string) ([]byte, error) {
+	var pageConf *pdfcpu.PageConfiguration
+	if size != "" {
+		dim, ok := types.PaperSize[size]
+		if !ok {
+			return nil, fmt.Errorf("%w: unknown page size %q", document.ErrInvalidInput, size)
+		}
+		pageConf = &pdfcpu.PageConfiguration{PageDim: dim, PageSize: size, UserDim: true, InpUnit: types.POINTS}
+	}
+
+	// api.InsertPages inserts one blank per selected page, so insert one at a
+	// time; repeated inserts at the same position just stack identical blanks.
+	cur := pdf
+	sel := []string{strconv.Itoa(page)}
+	for i := 0; i < count; i++ {
+		// api.InsertPages mutates conf.Cmd; keep the shared config untouched.
+		conf := *e.conf
+		var buf bytes.Buffer
+		if err := api.InsertPages(bytes.NewReader(cur), &buf, sel, before, pageConf, &conf); err != nil {
+			return nil, fmt.Errorf("pdfcpu insert pages: %w", err)
+		}
+		cur = buf.Bytes()
+	}
+	return cur, nil
 }
 
 // compile-time check: Engine satisfies the domain interface.

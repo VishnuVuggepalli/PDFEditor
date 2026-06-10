@@ -39,3 +39,24 @@ func (h *Handlers) FillForm(c *gin.Context) {
 	}
 	ok(c, http.StatusOK, doc)
 }
+
+// addFormFieldsRequest is the body for POST /documents/:id/form/fields.
+type addFormFieldsRequest struct {
+	Fields []document.NewFormField `json:"fields"`
+}
+
+// AddFormFields handles POST /api/v1/documents/:id/form/fields — creates new
+// AcroForm fields on existing pages and creates a new version.
+func (h *Handlers) AddFormFields(c *gin.Context) {
+	var req addFormFieldsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, fmt.Errorf("%w: bad JSON body: %v", document.ErrInvalidInput, err))
+		return
+	}
+	doc, err := h.svc.AddFormFields(c.Request.Context(), c.Param("id"), req.Fields)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, doc)
+}

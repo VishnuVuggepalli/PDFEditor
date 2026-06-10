@@ -156,6 +156,14 @@ func (f *fakeEngine) FillForm(pdf []byte, values map[string]string) ([]byte, err
 	return f.mark(pdf, fmt.Sprintf("fill%d", len(values))), nil
 }
 
+func (f *fakeEngine) AddFormFields(pdf []byte, fields []NewFormField) ([]byte, error) {
+	return f.mark(pdf, fmt.Sprintf("addfields%d", len(fields))), nil
+}
+
+func (f *fakeEngine) InsertBlankPages(pdf []byte, page int, before bool, count int, size string) ([]byte, error) {
+	return f.mark(pdf, fmt.Sprintf("insert%d_p%d_before%t", count, page, before)), nil
+}
+
 var validPDF = []byte("%PDF-1.7 fake")
 
 func newTestService() (*Service, *fakeStore) {

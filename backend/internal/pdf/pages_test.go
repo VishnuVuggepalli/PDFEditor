@@ -96,3 +96,46 @@ func TestPageOpsOnGarbageFail(t *testing.T) {
 		t.Error("Merge on garbage should fail")
 	}
 }
+
+func TestInsertBlankPages(t *testing.T) {
+	e := NewEngine()
+	src := fixture(t) // 2 pages
+
+	tests := []struct {
+		name      string
+		page      int
+		before    bool
+		count     int
+		size      string
+		wantPages int
+		wantErr   bool
+	}{
+		{"before first", 1, true, 1, "", 3, false},
+		{"before second", 2, true, 1, "", 3, false},
+		{"after last (append)", 2, false, 1, "", 3, false},
+		{"two pages at once", 1, true, 2, "", 4, false},
+		{"explicit Letter size", 1, true, 1, "Letter", 3, false},
+		{"explicit A4 size", 2, false, 1, "A4", 3, false},
+		{"unknown size", 1, true, 1, "Banana", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := e.InsertBlankPages(src, tt.page, tt.before, tt.count, tt.size)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("InsertBlankPages: %v", err)
+			}
+			if err := e.Validate(out); err != nil {
+				t.Fatalf("output invalid: %v", err)
+			}
+			if n := pageCount(t, e, out); n != tt.wantPages {
+				t.Errorf("want %d pages, got %d", tt.wantPages, n)
+			}
+		})
+	}
+}
