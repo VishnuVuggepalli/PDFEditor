@@ -10,7 +10,7 @@ import {
   rotatePage,
   toAnnotationInputs,
 } from './opsQueue';
-import type { PendingAnnotation } from './opsQueue';
+import type { PendingAnnotation, PendingStamp } from './opsQueue';
 
 describe('initPages', () => {
   it('creates one entry per page with original numbering', () => {
@@ -127,9 +127,9 @@ describe('countPendingOps', () => {
   });
 
   it('counts queued signature stamps', () => {
-    const stamps = [
-      { id: 's1', page: 1, rect: [0, 0, 100, 50] as const, dataUrl: 'data:image/png;base64,AA==' },
-      { id: 's2', page: 2, rect: [0, 0, 100, 50] as const, dataUrl: 'data:image/png;base64,AA==' },
+    const stamps: PendingStamp[] = [
+      { id: 's1', page: 1, rect: [0, 0, 100, 50], dataUrl: 'data:image/png;base64,AA==' },
+      { id: 's2', page: 2, rect: [0, 0, 100, 50], dataUrl: 'data:image/png;base64,AA==' },
     ];
     expect(countPendingOps(initPages(3), [], stamps)).toBe(2);
   });
