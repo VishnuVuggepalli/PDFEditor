@@ -6,11 +6,13 @@ import {
   displayMatrix,
   displayOrigin,
   escapePdfText,
+  lineAt,
   matConcat,
   matInvert,
   matRotate,
   matScale,
   rgbToRgba,
+  stextLines,
   transformPoint,
   transformRect,
   type Mat,
@@ -115,5 +117,33 @@ describe('buildEditContentStream', () => {
 describe('approxBaseline', () => {
   it('offsets the bbox bottom by ~0.21em', () => {
     expect(approxBaseline(700, 10)).toBeCloseTo(702.1);
+  });
+});
+
+describe('structured text helpers', () => {
+  const lines = [
+    { text: 'a', bbox: { x: 10, y: 10, w: 100, h: 12 }, font: { name: 'F', family: 'serif', weight: 'normal', style: 'normal', size: 10 } },
+    { text: 'b', bbox: { x: 10, y: 40, w: 80, h: 12 }, font: { name: 'F', family: 'serif', weight: 'normal', style: 'normal', size: 10 } },
+  ];
+
+  it('stextLines flattens text blocks and skips non-text blocks', () => {
+    expect(
+      stextLines({
+        blocks: [
+          { type: 'image' },
+          { type: 'text', lines: [lines[0]] },
+          { type: 'text' },
+          { type: 'text', lines: [lines[1]] },
+        ],
+      }).map((l) => l.text),
+    ).toEqual(['a', 'b']);
+    expect(stextLines({})).toEqual([]);
+  });
+
+  it('lineAt hit-tests fitz display-space points inclusively', () => {
+    expect(lineAt(lines, 50, 16)?.text).toBe('a');
+    expect(lineAt(lines, 10, 40)?.text).toBe('b'); // edge inclusive
+    expect(lineAt(lines, 120, 16)).toBeNull(); // right of every line
+    expect(lineAt(lines, 50, 30)).toBeNull(); // between the lines
   });
 });

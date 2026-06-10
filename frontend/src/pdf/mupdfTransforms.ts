@@ -101,6 +101,34 @@ export function rgbToRgba(
   return out;
 }
 
+/* ---- structured text ---- */
+
+import type { StextLine } from './mupdfProtocol';
+
+/** Parsed mupdf structured-text JSON (subset we consume). */
+export interface StextJson {
+  blocks?: Array<{ type: string; lines?: StextLine[] }>;
+}
+
+/** Flatten a structured-text JSON document into its text lines. */
+export function stextLines(json: StextJson): StextLine[] {
+  const out: StextLine[] = [];
+  for (const block of json.blocks ?? []) {
+    if (block.type !== 'text' || !block.lines) continue;
+    for (const line of block.lines) out.push(line);
+  }
+  return out;
+}
+
+/** Hit-test a fitz display-space point against text lines. */
+export function lineAt(lines: readonly StextLine[], fx: number, fy: number): StextLine | null {
+  for (const line of lines) {
+    const b = line.bbox;
+    if (fx >= b.x && fx <= b.x + b.w && fy >= b.y && fy <= b.y + b.h) return line;
+  }
+  return null;
+}
+
 /** Escape a string for a PDF literal string token. Non Latin-1 characters are
  * replaced (simple-font WinAnsi encoding limit of the edit prototype). */
 export function escapePdfText(text: string): string {

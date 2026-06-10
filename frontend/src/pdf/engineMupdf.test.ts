@@ -1,180 +1,109 @@
-/** Engine wrapper tests with the wasm module mocked. Geometry expectations
- * are anchored to values measured against the real wasm in
- * scripts/mupdf-coords.mjs (page transform [1,0,0,-1,0,842], fitz y-down
- * structured text boxes, redact rects in fitz space). */
+/** Engine facade tests with the worker boundary mocked: a fake RpcPort
+ * answers protocol requests with canned results, so these tests cover the
+ * main-thread half (DOM blits, text layer, hit testing, per-canvas render
+ * cancellation) without wasm or a real Worker. Geometry fixtures match
+ * scripts/mupdf-coords.mjs measurements (page transform [1,0,0,-1,0,842],
+ * fitz y-down boxes). */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-/* ---- fake PDFObject tree ---- */
-
-class FakeObj {
-  kind: 'null' | 'number' | 'array' | 'dict' | 'stream';
-  value: unknown;
-  items: FakeObj[] = [];
-  dict = new Map<string, FakeObj>();
-
-  constructor(kind: FakeObj['kind'], value?: unknown) {
-    this.kind = kind;
-    this.value = value;
-  }
-
-  static num(v: number) {
-    return new FakeObj('number', v);
-  }
-  static arr(nums: number[]) {
-    const o = new FakeObj('array');
-    o.items = nums.map((n) => FakeObj.num(n));
-    return o;
-  }
-
-  isNull() {
-    return this.kind === 'null';
-  }
-  isNumber() {
-    return this.kind === 'number';
-  }
-  isArray() {
-    return this.kind === 'array';
-  }
-  isDictionary() {
-    return this.kind === 'dict';
-  }
-  asNumber() {
-    return this.value as number;
-  }
-  get length() {
-    return this.items.length;
-  }
-  get(key: number | string): FakeObj {
-    if (typeof key === 'number') return this.items[key] ?? new FakeObj('null');
-    return this.dict.get(key) ?? new FakeObj('null');
-  }
-  getInheritable(key: string): FakeObj {
-    return this.get(key);
-  }
-  put(key: string, value: FakeObj) {
-    this.dict.set(key, value);
-  }
-  push(value: FakeObj) {
-    this.items.push(value);
-  }
-}
-
-/* ---- fake page/document ---- */
-
-const STEXT = {
-  blocks: [
-    {
-      type: 'text',
-      bbox: { x: 72, y: 96, w: 308, h: 32 },
-      lines: [
-        {
-          text: 'Hello world',
-          bbox: { x: 72, y: 96, w: 200, h: 32 },
-          font: { name: 'Helvetica', family: 'sans-serif', weight: 'normal', style: 'normal', size: 24 },
-        },
-        {
-          text: 'Second line',
-          bbox: { x: 72, y: 200, w: 150, h: 16 },
-          font: { name: 'Times-Roman', family: 'serif', weight: 'normal', style: 'normal', size: 12 },
-        },
-      ],
-    },
-  ],
-};
-
-function makeFakes() {
-  const calls: Record<string, unknown[][]> = {};
-  const track = (name: string, ...args: unknown[]) => {
-    (calls[name] ??= []).push(args);
-  };
-
-  const pageObj = new FakeObj('dict');
-  pageObj.put('MediaBox', FakeObj.arr([0, 0, 595, 842]));
-  const resources = new FakeObj('dict');
-  pageObj.put('Resources', resources);
-  pageObj.put('Contents', new FakeObj('stream'));
-
-  const fakeAnnot = {
-    setRect: (r: unknown) => track('annot.setRect', r),
-  };
-
-  const fakePixmap = {
-    getWidth: () => 2,
-    getHeight: () => 2,
-    getStride: () => 6,
-    getPixels: () => new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]),
-    destroy: () => track('pixmap.destroy'),
-  };
-
-  const fakePage = {
-    getBounds: () => [0, 0, 595, 842],
-    getTransform: () => [1, 0, 0, -1, 0, 842],
-    getObject: () => pageObj,
-    toStructuredText: (opts?: string) => {
-      track('toStructuredText', opts);
-      return { asJSON: () => JSON.stringify(STEXT), destroy: () => track('stext.destroy') };
-    },
-    toPixmap: (...args: unknown[]) => {
-      track('toPixmap', ...args);
-      return fakePixmap;
-    },
-    createAnnotation: (type: string) => {
-      track('createAnnotation', type);
-      return fakeAnnot;
-    },
-    applyRedactions: (...args: unknown[]) => track('applyRedactions', ...args),
-    destroy: () => track('page.destroy'),
-  };
-
-  const savedBytes = new Uint8Array([1, 2, 3, 4]);
-  const fakeDoc = {
-    countPages: () => 2,
-    loadPage: (i: number) => {
-      track('loadPage', i);
-      return fakePage;
-    },
-    asPDF: function () {
-      return this;
-    },
-    isPDF: () => true,
-    addSimpleFont: (f: unknown) => {
-      track('addSimpleFont', f);
-      return new FakeObj('dict');
-    },
-    addStream: (data: unknown) => {
-      track('addStream', data);
-      return new FakeObj('stream');
-    },
-    newDictionary: () => new FakeObj('dict'),
-    newArray: () => new FakeObj('array'),
-    saveToBuffer: (opts: unknown) => {
-      track('saveToBuffer', opts);
-      return { asUint8Array: () => savedBytes, destroy: () => track('buffer.destroy') };
-    },
-    destroy: () => track('doc.destroy'),
-  };
-
-  return { calls, pageObj, fakeDoc, fakePage };
-}
-
-const fakes = vi.hoisted(() => ({ current: null as ReturnType<typeof makeFakes> | null }));
-
-vi.mock('mupdf', () => ({
-  Document: {
-    openDocument: () => fakes.current!.fakeDoc,
-  },
-  ColorSpace: { DeviceRGB: 'DeviceRGB' },
-  Font: class {
-    name: string;
-    constructor(name: string) {
-      this.name = name;
-    }
-  },
-  PDFPage: { REDACT_IMAGE_NONE: 0, REDACT_LINE_ART_NONE: 0, REDACT_TEXT_REMOVE: 0 },
-}));
-
 import { loadPdfMupdf } from './engineMupdf';
 import { canEditText } from './engineApi';
+import {
+  MupdfRpc,
+  type ClientMessage,
+  type MupdfRequest,
+  type RpcPort,
+  type WorkerMessage,
+} from './mupdfProtocol';
+
+const LINES = [
+  {
+    text: 'Hello world',
+    bbox: { x: 72, y: 96, w: 200, h: 32 },
+    font: { name: 'Helvetica', family: 'sans-serif', weight: 'normal', style: 'normal', size: 24 },
+  },
+  {
+    text: 'Second line',
+    bbox: { x: 72, y: 200, w: 150, h: 16 },
+    font: { name: 'Times-Roman', family: 'serif', weight: 'normal', style: 'normal', size: 12 },
+  },
+];
+
+const SAVED = [1, 2, 3, 4];
+
+/** Emulates the worker: answers each request with a canned result. With
+ * `hold = true` replies queue up until flush() — used to test superseded
+ * renders. */
+class FakeWorkerPort implements RpcPort {
+  requests: MupdfRequest[] = [];
+  cancels: number[] = [];
+  transfers: Transferable[][] = [];
+  hold = false;
+  private held: Array<() => void> = [];
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onerror: ((e: { message?: string }) => void) | null = null;
+
+  postMessage(msg: ClientMessage, transfer: Transferable[] = []): void {
+    if (msg.kind === 'cancel') {
+      this.cancels.push(msg.id);
+      return;
+    }
+    this.requests.push(msg.req);
+    this.transfers.push(transfer);
+    const deliver = () => this.reply({ kind: 'result', id: msg.id, result: this.respond(msg.req) });
+    if (this.hold) this.held.push(deliver);
+    else queueMicrotask(deliver);
+  }
+
+  flush(): void {
+    const all = this.held;
+    this.held = [];
+    for (const d of all) d();
+  }
+
+  reply(msg: WorkerMessage): void {
+    this.onmessage?.({ data: msg });
+  }
+
+  terminate(): void {}
+
+  count(op: MupdfRequest['op']): number {
+    return this.requests.filter((r) => r.op === op).length;
+  }
+
+  private respond(req: MupdfRequest): unknown {
+    switch (req.op) {
+      case 'open':
+        return { docId: 7, pageCount: 2 };
+      case 'close':
+        return { closed: true };
+      case 'pageInfo':
+        return {
+          baseRotation: 0,
+          viewBox: [0, 0, 595, 842],
+          bounds: [0, 0, 595, 842],
+          pageTransform: [1, 0, 0, -1, 0, 842],
+        };
+      case 'render':
+        return {
+          pixels: new Uint8ClampedArray([
+            10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255, 100, 110, 120, 255,
+          ]).buffer,
+          width: 2,
+          height: 2,
+        };
+      case 'textLines':
+        return { lines: LINES };
+      case 'replaceText':
+        return { bytes: new Uint8Array(SAVED).buffer };
+    }
+  }
+}
+
+let port: FakeWorkerPort;
+
+function load(url = '/doc') {
+  return loadPdfMupdf(url, new MupdfRpc(port));
+}
 
 function stubFetch() {
   vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -183,27 +112,50 @@ function stubFetch() {
   })));
 }
 
+function stubCanvas2d() {
+  const putImageData = vi.fn();
+  const canvas = document.createElement('canvas');
+  vi.spyOn(canvas, 'getContext').mockReturnValue({
+    putImageData,
+  } as unknown as CanvasRenderingContext2D);
+  vi.stubGlobal('ImageData', class {
+    data: Uint8ClampedArray;
+    width: number;
+    height: number;
+    constructor(data: Uint8ClampedArray, w: number, h: number) {
+      this.data = data;
+      this.width = w;
+      this.height = h;
+    }
+  });
+  return { canvas, putImageData };
+}
+
 beforeEach(() => {
-  fakes.current = makeFakes();
+  port = new FakeWorkerPort();
   stubFetch();
 });
 
 describe('loadPdfMupdf', () => {
-  it('loads a document and reports the page count', async () => {
-    const pdf = await loadPdfMupdf('/api/v1/documents/x');
+  it('opens the document in the worker, transferring the bytes', async () => {
+    const pdf = await load('/api/v1/documents/x');
     expect(pdf.pageCount).toBe(2);
     expect(canEditText(pdf)).toBe(true);
+    expect(port.requests[0].op).toBe('open');
+    const bytes = (port.requests[0] as { bytes: ArrayBuffer }).bytes;
+    expect(port.transfers[0]).toEqual([bytes]);
   });
 
-  it('rejects when the fetch fails', async () => {
+  it('rejects when the fetch fails (no worker request made)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })));
-    await expect(loadPdfMupdf('/missing')).rejects.toThrow('404');
+    await expect(load('/missing')).rejects.toThrow('404');
+    expect(port.requests).toHaveLength(0);
   });
 });
 
 describe('page geometry', () => {
   it('exposes viewBox, rotation and rotated base sizes', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+    const pdf = await load();
     const page = await pdf.page(1);
     expect(page.n).toBe(1);
     expect(page.baseRotation).toBe(0);
@@ -213,34 +165,22 @@ describe('page geometry', () => {
     expect(page.viewportParams(2, 90)).toEqual({ rotation: 90, scale: 2, viewBox: [0, 0, 595, 842] });
   });
 
-  it('caches page handles and rejects out-of-range pages', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+  it('caches page handles and rejects out-of-range pages without rpc calls', async () => {
+    const pdf = await load();
     const a = await pdf.page(1);
     const b = await pdf.page(1);
     expect(a).toBe(b);
-    expect(fakes.current!.calls['loadPage']).toHaveLength(1);
+    expect(port.count('pageInfo')).toBe(1);
     await expect(pdf.page(3)).rejects.toThrow('out of range');
+    expect(port.count('pageInfo')).toBe(1);
   });
 });
 
 describe('render', () => {
-  it('blits an RGBA-expanded pixmap into the canvas', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+  it('blits the transferred RGBA pixels into the canvas', async () => {
+    const pdf = await load();
     const page = await pdf.page(1);
-    const canvas = document.createElement('canvas');
-    const putImageData = vi.fn();
-    const ctx = { putImageData } as unknown as CanvasRenderingContext2D;
-    vi.spyOn(canvas, 'getContext').mockReturnValue(ctx);
-    vi.stubGlobal('ImageData', class {
-      data: Uint8ClampedArray;
-      width: number;
-      height: number;
-      constructor(data: Uint8ClampedArray, w: number, h: number) {
-        this.data = data;
-        this.width = w;
-        this.height = h;
-      }
-    });
+    const { canvas, putImageData } = stubCanvas2d();
 
     await page.render(canvas, 1);
     expect(canvas.width).toBe(2);
@@ -249,12 +189,43 @@ describe('render', () => {
     expect(putImageData).toHaveBeenCalledTimes(1);
     const img = putImageData.mock.calls[0][0] as { data: Uint8ClampedArray };
     expect(Array.from(img.data.slice(0, 8))).toEqual([10, 20, 30, 255, 40, 50, 60, 255]);
-    // pixmap freed even on success
-    expect(fakes.current!.calls['pixmap.destroy']).toHaveLength(1);
+    const req = port.requests.find((r) => r.op === 'render') as { scale: number };
+    expect(req.scale).toBe(1); // jsdom devicePixelRatio = 1
+  });
+
+  it('supersedes an in-flight render on the same canvas (cancel, no draw)', async () => {
+    const pdf = await load();
+    const page = await pdf.page(1);
+    const { canvas, putImageData } = stubCanvas2d();
+
+    port.hold = true;
+    const first = page.render(canvas, 1);
+    const second = page.render(canvas, 2);
+    port.flush();
+    await expect(first).resolves.toBeUndefined(); // cancelled silently, like pdf.js
+    await expect(second).resolves.toBeUndefined();
+    expect(port.cancels).toHaveLength(1);
+    expect(putImageData).toHaveBeenCalledTimes(1); // only the second drew
+  });
+
+  it('does not cancel renders targeting a different canvas', async () => {
+    const pdf = await load();
+    const page = await pdf.page(1);
+    const a = stubCanvas2d();
+    const b = stubCanvas2d();
+
+    port.hold = true;
+    const ra = page.render(a.canvas, 1);
+    const rb = page.render(b.canvas, 1);
+    port.flush();
+    await Promise.all([ra, rb]);
+    expect(port.cancels).toHaveLength(0);
+    expect(a.putImageData).toHaveBeenCalledTimes(1);
+    expect(b.putImageData).toHaveBeenCalledTimes(1);
   });
 
   it('throws when no 2d context is available', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+    const pdf = await load();
     const page = await pdf.page(1);
     const canvas = document.createElement('canvas');
     vi.spyOn(canvas, 'getContext').mockReturnValue(null);
@@ -264,7 +235,7 @@ describe('render', () => {
 
 describe('text layer', () => {
   it('emits absolutely positioned spans compatible with the search-mark contract', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+    const pdf = await load();
     const page = await pdf.page(1);
     const container = document.createElement('div');
     await page.renderTextLayer(container, 1);
@@ -278,7 +249,7 @@ describe('text layer', () => {
   });
 
   it('scales and rotates spans for a pending rotation delta', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+    const pdf = await load();
     const page = await pdf.page(1);
     const container = document.createElement('div');
     await page.renderTextLayer(container, 0.5, 90);
@@ -290,16 +261,19 @@ describe('text layer', () => {
     expect(span.style.transform).toContain('rotate(90deg)');
   });
 
-  it('plain text joins lines (used by search counting)', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+  it('fetches structured text once per page (cached across calls)', async () => {
+    const pdf = await load();
     const page = await pdf.page(1);
+    await page.renderTextLayer(document.createElement('div'), 1);
+    await page.renderTextLayer(document.createElement('div'), 2);
     expect(await page.text()).toBe('Hello world Second line');
+    expect(port.count('textLines')).toBe(1);
   });
 });
 
 describe('text editing', () => {
   it('finds the span under a PDF-space (y-up) point', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+    const pdf = await load();
     if (!canEditText(pdf)) throw new Error('expected edit capability');
     // PDF y-up point inside line 1: fitz y 96..128 -> pdf y 714..746
     const span = await pdf.textSpanAt(1, 100, 730);
@@ -311,47 +285,38 @@ describe('text editing', () => {
     expect(await pdf.textSpanAt(1, 500, 500)).toBeNull();
   });
 
-  it('replaces a span via redaction + appended content stream', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+  it('replaces a span via the worker and invalidates cached text', async () => {
+    const pdf = await load();
     if (!canEditText(pdf)) throw new Error('expected edit capability');
+    const page = await pdf.page(1);
+    await page.text(); // prime the lines cache
     const span = (await pdf.textSpanAt(1, 100, 730))!;
     const bytes = await pdf.replaceTextSpan(span, 'Replacement');
-    expect(Array.from(bytes)).toEqual([1, 2, 3, 4]);
+    expect(Array.from(bytes)).toEqual(SAVED);
 
-    const calls = fakes.current!.calls;
-    expect(calls['createAnnotation']).toEqual([['Redact']]);
-    expect(calls['annot.setRect']).toEqual([[[72, 96, 272, 128]]]);
-    expect(calls['applyRedactions']).toEqual([[false, 0, 0, 0]]);
-    // replacement drawn with the original font size at the span position
-    const fragment = calls['addStream'][0][0] as string;
-    expect(fragment).toContain('/FzEdit 24.00 Tf');
-    expect(fragment).toContain('(Replacement) Tj');
-    // content stream became [original, extra]
-    const contents = fakes.current!.pageObj.get('Contents');
-    expect(contents.isArray()).toBe(true);
-    expect(contents.length).toBe(2);
-    // font registered in page resources
-    const fonts = fakes.current!.pageObj.get('Resources').get('Font');
-    expect(fonts.get('FzEdit').isNull()).toBe(false);
-  });
+    const req = port.requests.find((r) => r.op === 'replaceText') as {
+      span: { text: string };
+      newText: string;
+    };
+    expect(req.span.text).toBe('Hello world');
+    expect(req.newText).toBe('Replacement');
 
-  it('skips drawing when the replacement is empty (pure deletion)', async () => {
-    const pdf = await loadPdfMupdf('/doc');
-    if (!canEditText(pdf)) throw new Error('expected edit capability');
-    const span = (await pdf.textSpanAt(1, 100, 730))!;
-    await pdf.replaceTextSpan(span, '   ');
-    expect(fakes.current!.calls['applyRedactions']).toHaveLength(1);
-    expect(fakes.current!.calls['addStream']).toBeUndefined();
+    // cache invalidated: next text() re-fetches lines
+    const before = port.count('textLines');
+    await new Promise((r) => setTimeout(r, 0)); // let invalidation settle
+    await page.text();
+    expect(port.count('textLines')).toBe(before + 1);
   });
 });
 
 describe('destroy', () => {
-  it('destroys cached pages and the document, then refuses further use', async () => {
-    const pdf = await loadPdfMupdf('/doc');
+  it('closes the worker-side document and refuses further use', async () => {
+    const pdf = await load();
     await pdf.page(1);
     pdf.destroy();
-    expect(fakes.current!.calls['page.destroy']).toHaveLength(1);
-    expect(fakes.current!.calls['doc.destroy']).toHaveLength(1);
+    expect(port.count('close')).toBe(1);
     await expect(pdf.page(1)).rejects.toThrow('destroyed');
+    pdf.destroy(); // idempotent
+    expect(port.count('close')).toBe(1);
   });
 });

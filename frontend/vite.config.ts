@@ -15,6 +15,12 @@ export default defineConfig({
   build: {
     target: 'es2022',
   },
+  // mupdfWorker.ts must build as an ES-module worker chunk: it (and
+  // dist/mupdf.js inside it) uses module imports + top-level await, which
+  // the default IIFE worker format cannot represent.
+  worker: {
+    format: 'es',
+  },
   server: {
     proxy: {
       '/api': {
