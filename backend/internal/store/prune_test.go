@@ -66,8 +66,8 @@ func TestAddVersionPruning(t *testing.T) {
 	tests := []struct {
 		name  string
 		max   int
-		total int    // versions written (v1 + edits)
-		want  []int  // surviving version numbers, oldest first
+		total int   // versions written (v1 + edits)
+		want  []int // surviving version numbers, oldest first
 	}{
 		{"unlimited keeps all", 0, 5, []int{1, 2, 3, 4, 5}},
 		{"at boundary keeps all", 3, 3, []int{1, 2, 3}},
