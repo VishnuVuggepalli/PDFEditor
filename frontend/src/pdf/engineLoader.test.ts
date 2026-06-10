@@ -43,10 +43,10 @@ describe('runtime overrides', () => {
   });
 
   it('?engine= URL param beats localStorage and the default', () => {
-    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
-    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'pdfjs');
-    window.history.replaceState(null, '', '/?engine=mupdf#/doc/abc');
-    expect(configuredEngine()).toBe('mupdf');
+    vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'mupdf');
+    window.history.replaceState(null, '', '/?engine=pdfjs#/doc/abc');
+    expect(configuredEngine()).toBe('pdfjs');
   });
 
   it('ignores invalid override values', () => {
@@ -64,11 +64,53 @@ describe('runtime overrides', () => {
   });
 
   it('loadPdf dispatches through the override', async () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'mupdf');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'pdfjs');
+    await loadPdf('/doc.pdf');
+    expect(pdfjsLoad).toHaveBeenCalledWith('/doc.pdf');
+    expect(mupdfLoad).not.toHaveBeenCalled();
+  });
+});
+
+describe('pdfjs-default builds prune the mupdf engine', () => {
+  it('configuredEngine degrades a mupdf override to pdfjs', () => {
     vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
     window.localStorage.setItem(ENGINE_STORAGE_KEY, 'mupdf');
-    await loadPdf('/doc.pdf');
-    expect(mupdfLoad).toHaveBeenCalledWith('/doc.pdf');
-    expect(pdfjsLoad).not.toHaveBeenCalled();
+    expect(configuredEngine()).toBe('pdfjs');
+    window.history.replaceState(null, '', '/?engine=mupdf#/doc/abc');
+    expect(configuredEngine()).toBe('pdfjs');
+  });
+
+  it('loadPdf uses pdf.js and toasts "unavailable in this build" exactly once', async () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
+    window.localStorage.setItem(ENGINE_STORAGE_KEY, 'mupdf');
+    const toasts: ToastInput[] = [];
+    const unsubscribe = subscribeToasts((t) => toasts.push(t));
+    try {
+      // No other test triggers the unavailable toast, so the module-level
+      // once-per-session latch is still unset when this test runs.
+      await loadPdf('/doc.pdf');
+      await loadPdf('/doc2.pdf');
+      expect(mupdfLoad).not.toHaveBeenCalled();
+      expect(pdfjsLoad).toHaveBeenCalledTimes(2);
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0].title).toBe('mupdf engine unavailable in this build');
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not toast when no mupdf override is present', async () => {
+    vi.stubEnv('VITE_PDF_ENGINE', 'pdfjs');
+    const toasts: ToastInput[] = [];
+    const unsubscribe = subscribeToasts((t) => toasts.push(t));
+    try {
+      await loadPdf('/doc.pdf');
+      expect(pdfjsLoad).toHaveBeenCalledWith('/doc.pdf');
+      expect(toasts).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
   });
 });
 

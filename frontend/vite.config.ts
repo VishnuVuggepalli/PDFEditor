@@ -11,6 +11,14 @@ export default defineConfig({
   //   the `new URL("mupdf-wasm.wasm", import.meta.url)` lookup resolves into
   //   node_modules; at build time Rollup emits the wasm as an asset.
   // - es2022 build target because dist/mupdf.js uses top-level await.
+  //
+  // Engine pruning needs no rollup config here: src/pdf/engineLoader.ts
+  // guards every mupdf import behind literal import.meta.env.VITE_PDF_ENGINE
+  // comparisons, so Vite's define + Rollup treeshaking already drop the
+  // mupdf chunks and the ~9.6 MB wasm asset from VITE_PDF_ENGINE=pdfjs
+  // builds (the runtime ?engine=/localStorage override degrades to pdf.js
+  // there). Default (mupdf) builds keep BOTH engines on purpose: pdf.js is
+  // the per-document fallback renderer.
   optimizeDeps: {
     exclude: ['mupdf'],
   },
