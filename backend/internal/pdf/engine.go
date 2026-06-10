@@ -23,10 +23,19 @@ type Engine struct {
 	conf *model.Configuration
 }
 
+// maxDecompressedBytes caps both encoded stream bytes read from a PDF and
+// decoded bytes produced by filters (pdfcpu defaults are 512MB each), giving
+// headroom against decompression-bomb PDFs on a 50MB upload limit.
+const maxDecompressedBytes = 200 << 20 // 200MB
+
 // NewEngine returns an Engine with pdfcpu's relaxed default configuration,
-// which tolerates the minor spec violations common in real-world PDFs.
+// which tolerates the minor spec violations common in real-world PDFs, but
+// with tightened resource limits against PDF bombs.
 func NewEngine() *Engine {
-	return &Engine{conf: model.NewDefaultConfiguration()}
+	conf := model.NewDefaultConfiguration()
+	conf.Limits.MaxStreamBytes = maxDecompressedBytes
+	conf.Limits.MaxDecodeBytes = maxDecompressedBytes
+	return &Engine{conf: conf}
 }
 
 // Validate checks magic bytes first (cheap), then runs pdfcpu's structural
