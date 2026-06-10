@@ -6,13 +6,15 @@ import {
   deletedPageNumbers,
   deletePage,
   initPages,
+  nextFieldName,
   orderChanged,
   reorderPages,
   restorePage,
   rotatePage,
   toAnnotationInputs,
+  toNewFormFieldInputs,
 } from './opsQueue';
-import type { PendingAnnotation, PendingStamp } from './opsQueue';
+import type { PendingAnnotation, PendingFormField, PendingStamp } from './opsQueue';
 
 describe('initPages', () => {
   it('creates one entry per page with original numbering', () => {
@@ -267,5 +269,45 @@ describe('deletedPageNumbers', () => {
   it('returns the head-version numbers of pages pending deletion', () => {
     const pages = deletePage(deletePage(initPages(4), 'p1'), 'p3');
     expect([...deletedPageNumbers(pages)].sort()).toEqual([1, 3]);
+  });
+});
+
+describe('form designer queue', () => {
+  const fields: PendingFormField[] = [
+    { id: 'f1', type: 'text', name: 'firstName', page: 1, rect: [10, 10, 110, 30] },
+    { id: 'f2', type: 'checkbox', name: 'agree', page: 2, rect: [10, 10, 24, 24] },
+    { id: 'f3', type: 'text', name: 'notes', page: 2, rect: [10, 40, 210, 120], multiline: true },
+  ];
+
+  describe('nextFieldName', () => {
+    it('starts at field_1', () => {
+      expect(nextFieldName(new Set())).toBe('field_1');
+    });
+    it('skips taken names', () => {
+      expect(nextFieldName(new Set(['field_1', 'field_2', 'other']))).toBe('field_3');
+    });
+  });
+
+  describe('toNewFormFieldInputs', () => {
+    it('maps queued fields to the wire format (name → id)', () => {
+      expect(toNewFormFieldInputs(fields)).toEqual([
+        { type: 'text', id: 'firstName', page: 1, rect: [10, 10, 110, 30] },
+        { type: 'checkbox', id: 'agree', page: 2, rect: [10, 10, 24, 24] },
+        { type: 'text', id: 'notes', page: 2, rect: [10, 40, 210, 120], multiline: true },
+      ]);
+    });
+    it('returns [] for an empty queue', () => {
+      expect(toNewFormFieldInputs([])).toEqual([]);
+    });
+  });
+
+  describe('counting', () => {
+    it('counts queued fields as pending ops', () => {
+      expect(countPendingOps(initPages(3), [], [], fields)).toBe(3);
+    });
+    it('counts queued fields on pages pending deletion as doomed', () => {
+      const pages = deletePage(initPages(3), 'p2');
+      expect(countAnnotsOnDeletedPages(pages, [], [], fields)).toBe(2);
+    });
   });
 });

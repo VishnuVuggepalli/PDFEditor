@@ -2,13 +2,20 @@
  * overlay + search match marks + inline text-edit overlay (mupdf engine). */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PageHandle, PdfHandle } from '../../pdf/engine';
-import { canEditText, type TextSpanInfo } from '../../pdf/engineApi';
+import {
+  canEditImages,
+  canEditText,
+  type ImageEditRequest,
+  type ImageSelection,
+  type TextSpanInfo,
+} from '../../pdf/engineApi';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import { viewportSize, viewportToPdfPoint } from '../../pdf/coords';
 import { applySearchMarks } from '../../pdf/searchMarks';
-import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
-import type { AnnotStyle, Tool } from '../../state/editorStore';
+import type { EditorPage, PendingAnnotation, PendingFormField, PendingStamp } from '../../state/opsQueue';
+import type { AnnotStyle, FieldDraftType, Tool } from '../../state/editorStore';
 import { AnnotationLayer } from './AnnotationLayer';
+import { ImageEditOverlay } from './ImageEditOverlay';
 import { InlineTextEdit } from './InlineTextEdit';
 
 interface Props {
@@ -20,27 +27,35 @@ interface Props {
   readonly: boolean;
   annots: ReadonlyArray<PendingAnnotation>;
   stamps: ReadonlyArray<PendingStamp>;
+  /** queued new form fields on this page (form designer) */
+  fields: ReadonlyArray<PendingFormField>;
+  /** non-null while the forms tool is placing a new field */
+  fieldDraft: FieldDraftType;
   onAdd: (a: PendingAnnotation) => void;
   onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemove: (id: string) => void;
   onRemoveStamp: (id: string) => void;
+  /** form designer: rect drawn on this page (head-version numbering) */
+  onAddField: (page: number, type: 'text' | 'checkbox', rect: PdfRect) => void;
+  onRemoveField: (id: string) => void;
   /** sign tool click: page (head-version numbering), viewport point + params */
   onSign: (page: number, at: [number, number], vp: ViewportParams) => void;
   searchQ: string;
   /** index of the active match within this page, or -1 */
   searchActiveLocal: number;
   registerNode: (id: string, el: HTMLDivElement | null) => void;
-  /** receives full edited PDF bytes after an in-place text edit (mupdf
-   * engine only); absent or non-editing engines disable the gesture. The
-   * promise resolves once the edit is persisted (rejects on save failure,
-   * keeping the overlay open for retry). */
-  onContentEdited?: (bytes: Uint8Array) => Promise<void>;
+  /** receives full edited PDF bytes after an in-place text or image edit
+   * (mupdf engine only); absent or non-editing engines disable the
+   * gestures. `label` names the edit for the success toast. The promise
+   * resolves once the edit is persisted (rejects on save failure, keeping
+   * the overlay open for retry). */
+  onContentEdited?: (bytes: Uint8Array, label?: string) => Promise<void>;
 }
 
 export function PageView(props: Props) {
   const {
-    pdf, page, targetW, tool, style, readonly, annots, stamps,
-    onAdd, onUpdate, onRemove, onRemoveStamp, onSign,
+    pdf, page, targetW, tool, style, readonly, annots, stamps, fields, fieldDraft,
+    onAdd, onUpdate, onRemove, onRemoveStamp, onAddField, onRemoveField, onSign,
     searchQ, searchActiveLocal, registerNode, onContentEdited,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -136,15 +151,72 @@ export function PageView(props: Props) {
     }
   }
 
+  // In-place image edit (mupdf engine): with the Select tool, click an
+  // image to select it (bounding-box highlight + floating toolbar). Delete/
+  // Replace apply immediately; move/resize applies via the Apply button.
+  const [imageSel, setImageSel] = useState<ImageSelection | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const imageEditable =
+    !readonly && tool === 'select' && onContentEdited !== undefined && canEditImages(pdf);
+
+  // Leaving the Select tool (or swapping documents) drops the selection
+  // (derived-state reset during render, not an effect).
+  const [selContext, setSelContext] = useState<{ tool: Tool; pdf: PdfHandle }>({ tool, pdf });
+  if (selContext.tool !== tool || selContext.pdf !== pdf) {
+    setSelContext({ tool, pdf });
+    setImageSel(null);
+  }
+
+  async function onSelectClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!imageEditable || !vp || !canEditImages(pdf) || imageBusy) return;
+    // A click that concludes a text-selection drag is not a select gesture.
+    const docSel = window.getSelection();
+    if (docSel && !docSel.isCollapsed) return;
+    const host = e.currentTarget.getBoundingClientRect();
+    const [px, py] = viewportToPdfPoint(e.clientX - host.left, e.clientY - host.top, vp);
+    try {
+      // Hit a different image to move the selection; empty space deselects.
+      setImageSel(await pdf.imageAt(page.origN, px, py));
+    } catch {
+      // hit-test failures (document torn down mid-gesture) end the gesture
+    }
+  }
+
+  async function commitImageEdit(edit: ImageEditRequest) {
+    if (imageBusy || !onContentEdited || !canEditImages(pdf)) return;
+    setImageBusy(true);
+    try {
+      const bytes = await pdf.applyImageEdit(edit);
+      await onContentEdited(bytes, 'Image edit');
+      setImageSel(null); // saved; the viewer reloads the new head version
+    } catch {
+      // save errors already raised a toast; keep the selection for retry
+    } finally {
+      setImageBusy(false);
+    }
+  }
+
   return (
     <div
       ref={(el) => registerNode(page.id, el)}
       className="sheet pdf-sheet"
       style={{ width: size.width, height: size.height }}
       onDoubleClick={editable ? (e) => void onDoubleClick(e) : undefined}
+      onClick={imageEditable ? (e) => void onSelectClick(e) : undefined}
     >
       <canvas ref={canvasRef} className="pdf-canvas" />
       <div ref={textRef} className="textLayer" />
+      {imageSel && vp && (
+        <ImageEditOverlay
+          sel={imageSel}
+          vp={vp}
+          busy={imageBusy}
+          onApply={(edit) => void commitImageEdit(edit)}
+          onCancel={() => {
+            if (!imageBusy) setImageSel(null);
+          }}
+        />
+      )}
       {editing && vp && (
         <InlineTextEdit
           span={editing}
@@ -164,6 +236,8 @@ export function PageView(props: Props) {
           pageOrigN={page.origN}
           annots={annots}
           stamps={stamps}
+          fields={fields}
+          fieldDraft={fieldDraft}
           tool={tool}
           style={style}
           readonly={readonly}
@@ -171,6 +245,8 @@ export function PageView(props: Props) {
           onUpdate={onUpdate}
           onRemove={onRemove}
           onRemoveStamp={onRemoveStamp}
+          onAddField={(type, rect) => onAddField(page.origN, type, rect)}
+          onRemoveField={onRemoveField}
           onSign={(at) => onSign(page.origN, at, vp)}
         />
       )}

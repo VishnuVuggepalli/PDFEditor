@@ -41,6 +41,22 @@ export interface FormField {
   locked: boolean;
 }
 
+/** One AcroForm field to create via POST /documents/{id}/form/fields.
+ * Rect is in PDF points with a lower-left origin. */
+export interface NewFormFieldInput {
+  type: 'text' | 'checkbox';
+  /** field name (/T), unique within the document */
+  id: string;
+  /** tooltip (/TU) */
+  label?: string;
+  page: number;
+  rect: [number, number, number, number];
+  /** text only */
+  multiline?: boolean;
+  /** text: initial value; checkbox: "true" / "false" */
+  default?: string;
+}
+
 /** One inclusive 1-based page range for POST /documents/{id}/split. */
 export interface SplitRange {
   from: number;

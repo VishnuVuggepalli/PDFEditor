@@ -7,6 +7,7 @@ import type {
   DocumentMeta,
   DocumentRecord,
   FormField,
+  NewFormFieldInput,
   PageOp,
   SplitRange,
   Version,
@@ -107,6 +108,47 @@ export function replaceContent(id: string, pdf: Uint8Array): Promise<DocumentRec
     method: 'POST',
     body: form,
   });
+}
+
+/** Create new AcroForm fields on existing pages (new version). */
+export function addFormFields(
+  id: string,
+  fields: NewFormFieldInput[],
+): Promise<DocumentRecord> {
+  return requestJSON<DocumentRecord>(
+    `/documents/${encodeURIComponent(id)}/form/fields`,
+    'POST',
+    { fields },
+  );
+}
+
+/** Insert blank pages so the first becomes page `at` (1-based;
+ * pageCount+1 appends at the end). Creates a new version. */
+export function insertBlankPages(
+  id: string,
+  at: number,
+  count = 1,
+  size?: string,
+): Promise<DocumentRecord> {
+  return requestJSON<DocumentRecord>(
+    `/documents/${encodeURIComponent(id)}/pages/insert`,
+    'POST',
+    { at, count, ...(size ? { size } : {}) },
+  );
+}
+
+/** Append pages of another stored document (head version) to this one.
+ * Empty/omitted pages appends the whole source. Creates a new version. */
+export function appendFromDocument(
+  id: string,
+  sourceId: string,
+  pages?: number[],
+): Promise<DocumentRecord> {
+  return requestJSON<DocumentRecord>(
+    `/documents/${encodeURIComponent(id)}/pages/append-from`,
+    'POST',
+    { sourceId, ...(pages && pages.length > 0 ? { pages } : {}) },
+  );
 }
 
 export function getFormFields(id: string): Promise<FormField[]> {

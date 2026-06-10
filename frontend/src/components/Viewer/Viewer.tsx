@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PdfHandle } from '../../pdf/engine';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
-import type { EditorPage, PendingAnnotation, PendingStamp } from '../../state/opsQueue';
-import type { AnnotStyle, Tool, Zoom } from '../../state/editorStore';
+import type { EditorPage, PendingAnnotation, PendingFormField, PendingStamp } from '../../state/opsQueue';
+import type { AnnotStyle, FieldDraftType, Tool, Zoom } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
 import { AnnotToolbar } from './AnnotToolbar';
 import { PageView } from './PageView';
@@ -34,20 +34,30 @@ interface Props {
   setAnnotStyle: (patch: Partial<AnnotStyle>) => void;
   annots: ReadonlyArray<PendingAnnotation>;
   stamps: ReadonlyArray<PendingStamp>;
+  /** queued new form fields (form designer) */
+  fields: ReadonlyArray<PendingFormField>;
+  /** non-null while the forms tool is placing a new field */
+  fieldDraft: FieldDraftType;
   onAddAnnot: (a: PendingAnnotation) => void;
   onUpdateAnnot: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemoveAnnot: (id: string) => void;
   onRemoveStamp: (id: string) => void;
+  /** form designer: rect drawn on a page (head-version numbering) */
+  onAddField: (page: number, type: 'text' | 'checkbox', rect: PdfRect) => void;
+  onRemoveField: (id: string) => void;
   onSign: (page: number, at: [number, number], vp: ViewportParams) => void;
-  /** in-place text edit result (mupdf engine only) */
-  onContentEdited?: (bytes: Uint8Array) => Promise<void>;
+  /** in-place text/image edit result (mupdf engine only); `label` names
+   * the edit for the success toast */
+  onContentEdited?: (bytes: Uint8Array, label?: string) => Promise<void>;
 }
 
 export function Viewer(props: Props) {
   const {
     pdf, pages, activeId, zoom, jumpToken, onActivePage, search, setSearch,
     viewing, onExitVersion, tool, annotStyle, setAnnotStyle,
-    annots, stamps, onAddAnnot, onUpdateAnnot, onRemoveAnnot, onRemoveStamp, onSign,
+    annots, stamps, fields, fieldDraft,
+    onAddAnnot, onUpdateAnnot, onRemoveAnnot, onRemoveStamp,
+    onAddField, onRemoveField, onSign,
     onContentEdited,
   } = props;
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -224,10 +234,14 @@ export function Viewer(props: Props) {
                 readonly={viewing != null}
                 annots={annots.filter((a) => a.page === p.origN)}
                 stamps={stamps.filter((s) => s.page === p.origN)}
+                fields={fields.filter((f) => f.page === p.origN)}
+                fieldDraft={fieldDraft}
                 onAdd={onAddAnnot}
                 onUpdate={onUpdateAnnot}
                 onRemove={onRemoveAnnot}
                 onRemoveStamp={onRemoveStamp}
+                onAddField={onAddField}
+                onRemoveField={onRemoveField}
                 onSign={onSign}
                 searchQ={search.open ? search.q : ''}
                 searchActiveLocal={i === activePageIdx ? activeLocal : -1}

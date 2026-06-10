@@ -9,7 +9,12 @@ import {
   restorePage,
   rotatePage,
 } from './opsQueue';
-import type { EditorPage, PendingAnnotation, PendingStamp } from './opsQueue';
+import type {
+  EditorPage,
+  PendingAnnotation,
+  PendingFormField,
+  PendingStamp,
+} from './opsQueue';
 
 export type Tool =
   | 'select'
@@ -29,7 +34,11 @@ interface Snapshot {
   readonly pages: ReadonlyArray<EditorPage>;
   readonly annots: ReadonlyArray<PendingAnnotation>;
   readonly stamps: ReadonlyArray<PendingStamp>;
+  readonly fields: ReadonlyArray<PendingFormField>;
 }
+
+/** Form-designer placement mode: which field type the next drawn rect creates. */
+export type FieldDraftType = 'text' | 'checkbox' | null;
 
 export interface AnnotStyle {
   readonly color: string;
@@ -44,8 +53,12 @@ export interface EditorState {
   pages: ReadonlyArray<EditorPage>;
   annots: ReadonlyArray<PendingAnnotation>;
   stamps: ReadonlyArray<PendingStamp>;
+  fields: ReadonlyArray<PendingFormField>;
   past: ReadonlyArray<Snapshot>;
   future: ReadonlyArray<Snapshot>;
+
+  /** non-null while the user is placing a new form field on the page */
+  fieldDraft: FieldDraftType;
 
   tool: Tool;
   zoom: Zoom;
@@ -74,6 +87,11 @@ export interface EditorState {
   addStamp(s: PendingStamp): void;
   removeStamp(id: string): void;
 
+  setFieldDraft(t: FieldDraftType): void;
+  addField(f: PendingFormField): void;
+  updateField(id: string, patch: Partial<Pick<PendingFormField, 'name' | 'multiline'>>): void;
+  removeField(id: string): void;
+
   undo(): void;
   redo(): void;
   clearPending(): void;
@@ -84,13 +102,16 @@ const FONT_SIZE_DEFAULT = 14;
 
 export const useEditorStore = create<EditorState>((set, get) => {
   /** push current pending state onto history and apply the next one */
-  function commit(next: Partial<Pick<EditorState, 'pages' | 'annots' | 'stamps'>>) {
+  function commit(
+    next: Partial<Pick<EditorState, 'pages' | 'annots' | 'stamps' | 'fields'>>,
+  ) {
     const s = get();
     set({
       pages: next.pages ?? s.pages,
       annots: next.annots ?? s.annots,
       stamps: next.stamps ?? s.stamps,
-      past: [...s.past, { pages: s.pages, annots: s.annots, stamps: s.stamps }],
+      fields: next.fields ?? s.fields,
+      past: [...s.past, { pages: s.pages, annots: s.annots, stamps: s.stamps, fields: s.fields }],
       future: [],
     });
   }
@@ -100,8 +121,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     pages: [],
     annots: [],
     stamps: [],
+    fields: [],
     past: [],
     future: [],
+    fieldDraft: null,
     tool: 'select',
     zoom: 100,
     activePageId: null,
@@ -119,14 +142,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
         pages,
         annots: [],
         stamps: [],
+        fields: [],
         past: [],
         future: [],
+        fieldDraft: null,
         tool: 'select',
         activePageId: pages[0]?.id ?? null,
       });
     },
 
-    setTool: (tool) => set({ tool }),
+    setTool: (tool) =>
+      set((s) => ({ tool, fieldDraft: tool === 'forms' ? s.fieldDraft : null })),
     setZoom: (zoom) => set({ zoom }),
     setActivePage: (id) => set({ activePageId: id }),
     setAnnotStyle: (patch) => set((s) => ({ annotStyle: { ...s.annotStyle, ...patch } })),
@@ -169,6 +195,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
       commit({ stamps: get().stamps.filter((s) => s.id !== id) });
     },
 
+    setFieldDraft: (t) => set({ fieldDraft: t }),
+    addField(f) {
+      commit({ fields: [...get().fields, f] });
+    },
+    updateField(id, patch) {
+      commit({
+        fields: get().fields.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+      });
+    },
+    removeField(id) {
+      commit({ fields: get().fields.filter((f) => f.id !== id) });
+    },
+
     undo() {
       const s = get();
       if (s.past.length === 0) return;
@@ -177,8 +216,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
         pages: prev.pages,
         annots: prev.annots,
         stamps: prev.stamps,
+        fields: prev.fields,
         past: s.past.slice(0, -1),
-        future: [...s.future, { pages: s.pages, annots: s.annots, stamps: s.stamps }],
+        future: [...s.future, { pages: s.pages, annots: s.annots, stamps: s.stamps, fields: s.fields }],
       });
     },
     redo() {
@@ -189,12 +229,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
         pages: next.pages,
         annots: next.annots,
         stamps: next.stamps,
+        fields: next.fields,
         future: s.future.slice(0, -1),
-        past: [...s.past, { pages: s.pages, annots: s.annots, stamps: s.stamps }],
+        past: [...s.past, { pages: s.pages, annots: s.annots, stamps: s.stamps, fields: s.fields }],
       });
     },
     clearPending() {
-      set({ annots: [], stamps: [], past: [], future: [] });
+      set({ annots: [], stamps: [], fields: [], fieldDraft: null, past: [], future: [] });
     },
   };
 });

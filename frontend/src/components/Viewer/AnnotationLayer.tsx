@@ -10,8 +10,8 @@ import {
   viewportToPdfPoint,
 } from '../../pdf/coords';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
-import type { PendingAnnotation, PendingStamp } from '../../state/opsQueue';
-import type { AnnotStyle, Tool } from '../../state/editorStore';
+import type { PendingAnnotation, PendingFormField, PendingStamp } from '../../state/opsQueue';
+import type { AnnotStyle, FieldDraftType, Tool } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
 import { NotePins } from './NotePins';
 import { TextBox } from './TextBox';
@@ -22,7 +22,7 @@ const HIGHLIGHT_OPACITY = 0.45;
 const MIN_LINE_PX = 8;
 
 interface Draft {
-  kind: 'highlight' | 'square' | 'circle' | 'line' | 'ink';
+  kind: 'highlight' | 'square' | 'circle' | 'line' | 'ink' | 'field';
   sx: number;
   sy: number;
   x: number;
@@ -41,6 +41,10 @@ interface Props {
   pageOrigN: number;
   annots: ReadonlyArray<PendingAnnotation>;
   stamps: ReadonlyArray<PendingStamp>;
+  /** queued new form fields on this page (form designer) */
+  fields: ReadonlyArray<PendingFormField>;
+  /** non-null while the forms tool is placing a new field */
+  fieldDraft: FieldDraftType;
   tool: Tool;
   style: AnnotStyle;
   readonly: boolean;
@@ -48,14 +52,17 @@ interface Props {
   onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
   onRemove: (id: string) => void;
   onRemoveStamp: (id: string) => void;
+  /** form designer: rect drawn for a new field, in PDF points */
+  onAddField: (type: 'text' | 'checkbox', rect: PdfRect) => void;
+  onRemoveField: (id: string) => void;
   /** sign tool click: viewport-px location on this page */
   onSign: (at: [number, number]) => void;
 }
 
 export function AnnotationLayer(props: Props) {
   const {
-    vp, width, height, pageOrigN, annots, stamps, tool, style, readonly,
-    onAdd, onUpdate, onRemove, onRemoveStamp, onSign,
+    vp, width, height, pageOrigN, annots, stamps, fields, fieldDraft, tool, style, readonly,
+    onAdd, onUpdate, onRemove, onRemoveStamp, onAddField, onRemoveField, onSign,
   } = props;
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -63,7 +70,8 @@ export function AnnotationLayer(props: Props) {
   const [editText, setEditText] = useState<string | null>(null);
 
   const drawTools: Tool[] = ['highlight', 'comment', 'draw', 'shapes', 'text', 'sign'];
-  const active = !readonly && drawTools.includes(tool);
+  const placingField = tool === 'forms' && fieldDraft != null;
+  const active = !readonly && (drawTools.includes(tool) || placingField);
 
   function rel(e: React.MouseEvent): [number, number] {
     const el = ref.current;
@@ -107,8 +115,9 @@ export function AnnotationLayer(props: Props) {
       return;
     }
     e.preventDefault();
-    const kind: Draft['kind'] =
-      tool === 'highlight' ? 'highlight' : tool === 'shapes' ? style.shape : 'ink';
+    const kind: Draft['kind'] = placingField
+      ? 'field'
+      : tool === 'highlight' ? 'highlight' : tool === 'shapes' ? style.shape : 'ink';
     setDraft({
       kind, sx: x, sy: y, x, y, w: 0, h: 0,
       pts: [[x, y]],
@@ -176,6 +185,11 @@ export function AnnotationLayer(props: Props) {
       commitInk(draft);
     } else if (draft.kind === 'line') {
       commitLine(draft);
+    } else if (draft.kind === 'field') {
+      if (draft.w > minW && draft.h > minH && fieldDraft) {
+        const rect = viewportRectToPdf({ x: draft.x, y: draft.y, w: draft.w, h: draft.h }, vp);
+        onAddField(fieldDraft, rect);
+      }
     } else if (draft.w > minW && draft.h > minH) {
       const rect = viewportRectToPdf({ x: draft.x, y: draft.y, w: draft.w, h: draft.h }, vp);
       if (draft.kind === 'highlight') {
@@ -272,6 +286,23 @@ export function AnnotationLayer(props: Props) {
             </div>
           );
         })}
+        {fields.map((f) => {
+          const r = pdfRectToViewport(f.rect, vp);
+          return (
+            <div
+              key={f.id}
+              className={`an-field ${f.type}`}
+              style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+            >
+              <span className="an-field-name">{f.name}</span>
+              {!readonly && (
+                <button className="an-x" onClick={() => onRemoveField(f.id)}>
+                  <Icon name="close" size={11} />
+                </button>
+              )}
+            </div>
+          );
+        })}
         <svg className="an-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           {byType('ink').map((a) => (
             <path
@@ -319,6 +350,12 @@ export function AnnotationLayer(props: Props) {
           <div
             className="an-hl draft"
             style={{ left: draft.x, top: draft.y, width: draft.w, height: draft.h, background: draft.color }}
+          />
+        )}
+        {draft && draft.kind === 'field' && (
+          <div
+            className="an-field draft"
+            style={{ left: draft.x, top: draft.y, width: draft.w, height: draft.h }}
           />
         )}
         {draft && (draft.kind === 'square' || draft.kind === 'circle') && (

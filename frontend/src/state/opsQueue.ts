@@ -2,7 +2,12 @@
  * Page identity is the page's 1-based number in the HEAD version (origN);
  * all transforms return new arrays/objects, never mutate. */
 
-import type { AnnotationInput, AnnotationType, PageOp } from '../types/document';
+import type {
+  AnnotationInput,
+  AnnotationType,
+  NewFormFieldInput,
+  PageOp,
+} from '../types/document';
 import type { PdfRect } from '../pdf/coords';
 
 export interface EditorPage {
@@ -48,6 +53,28 @@ export interface PendingStamp {
   readonly rect: PdfRect;
   /** data: URL used both for overlay preview and for the upload */
   readonly dataUrl: string;
+}
+
+/** One queued AcroForm field to create (posted to /form/fields on save,
+ * before page ops — field pages reference head-version numbering). */
+export interface PendingFormField {
+  readonly id: string;
+  readonly type: 'text' | 'checkbox';
+  /** field name (/T), editable inline until saved */
+  readonly name: string;
+  /** page number in the saved head version */
+  readonly page: number;
+  /** placement rect in PDF points, lower-left origin */
+  readonly rect: PdfRect;
+  readonly multiline?: boolean;
+}
+
+/** First "field_N" not colliding with existing or pending field names. */
+export function nextFieldName(taken: ReadonlySet<string>): string {
+  for (let n = 1; ; n++) {
+    const name = `field_${n}`;
+    if (!taken.has(name)) return name;
+  }
 }
 
 export function initPages(pageCount: number): EditorPage[] {
@@ -131,10 +158,13 @@ export function countPendingOps(
   pages: ReadonlyArray<EditorPage>,
   annots: ReadonlyArray<PendingAnnotation>,
   stamps: ReadonlyArray<PendingStamp> = [],
+  fields: ReadonlyArray<PendingFormField> = [],
 ): number {
   const rotated = pages.filter((p) => !p.deleted && p.rotDelta !== 0).length;
   const deleted = pages.filter((p) => p.deleted).length;
-  return rotated + deleted + (orderChanged(pages) ? 1 : 0) + annots.length + stamps.length;
+  return (
+    rotated + deleted + (orderChanged(pages) ? 1 : 0) + annots.length + stamps.length + fields.length
+  );
 }
 
 /** True for annotations worth saving: everything except text annotations
@@ -155,12 +185,14 @@ export function countAnnotsOnDeletedPages(
   pages: ReadonlyArray<EditorPage>,
   annots: ReadonlyArray<PendingAnnotation>,
   stamps: ReadonlyArray<PendingStamp> = [],
+  fields: ReadonlyArray<PendingFormField> = [],
 ): number {
   const deleted = deletedPageNumbers(pages);
   if (deleted.size === 0) return 0;
   return (
     annots.filter((a) => deleted.has(a.page) && isSavableAnnotation(a)).length +
-    stamps.filter((s) => deleted.has(s.page)).length
+    stamps.filter((s) => deleted.has(s.page)).length +
+    fields.filter((f) => deleted.has(f.page)).length
   );
 }
 
@@ -187,4 +219,20 @@ export function toAnnotationInputs(
       if (a.line) out.line = [...a.line];
       return out;
     });
+}
+
+/** Convert queued form fields to the wire format (name → field id). */
+export function toNewFormFieldInputs(
+  fields: ReadonlyArray<PendingFormField>,
+): NewFormFieldInput[] {
+  return fields.map((f) => {
+    const out: NewFormFieldInput = {
+      type: f.type,
+      id: f.name,
+      page: f.page,
+      rect: [...f.rect],
+    };
+    if (f.multiline) out.multiline = true;
+    return out;
+  });
 }

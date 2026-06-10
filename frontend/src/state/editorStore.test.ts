@@ -87,3 +87,61 @@ describe('editorStore', () => {
     expect(store().annots[0].rect).toEqual([0, 0, 80, 24]);
   });
 });
+
+describe('form designer state', () => {
+  beforeEach(() => {
+    useEditorStore.getState().init('doc-1', 3);
+  });
+
+  const field = {
+    id: 'f1',
+    type: 'text' as const,
+    name: 'field_1',
+    page: 1,
+    rect: [10, 10, 110, 30] as [number, number, number, number],
+  };
+
+  it('queues, renames and removes fields with undo support', () => {
+    const s = useEditorStore.getState();
+    s.addField(field);
+    expect(useEditorStore.getState().fields).toHaveLength(1);
+
+    useEditorStore.getState().updateField('f1', { name: 'firstName', multiline: true });
+    expect(useEditorStore.getState().fields[0].name).toBe('firstName');
+    expect(useEditorStore.getState().fields[0].multiline).toBe(true);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().fields[0].name).toBe('field_1');
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().fields[0].name).toBe('firstName');
+
+    useEditorStore.getState().removeField('f1');
+    expect(useEditorStore.getState().fields).toHaveLength(0);
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().fields).toHaveLength(1);
+  });
+
+  it('clears field draft when switching to a non-forms tool', () => {
+    useEditorStore.getState().setTool('forms');
+    useEditorStore.getState().setFieldDraft('text');
+    expect(useEditorStore.getState().fieldDraft).toBe('text');
+
+    useEditorStore.getState().setTool('forms');
+    expect(useEditorStore.getState().fieldDraft).toBe('text'); // staying on forms keeps it
+
+    useEditorStore.getState().setTool('select');
+    expect(useEditorStore.getState().fieldDraft).toBeNull();
+  });
+
+  it('init and clearPending reset fields and draft mode', () => {
+    useEditorStore.getState().addField(field);
+    useEditorStore.getState().setFieldDraft('checkbox');
+    useEditorStore.getState().clearPending();
+    expect(useEditorStore.getState().fields).toHaveLength(0);
+    expect(useEditorStore.getState().fieldDraft).toBeNull();
+
+    useEditorStore.getState().addField(field);
+    useEditorStore.getState().init('doc-2', 2);
+    expect(useEditorStore.getState().fields).toHaveLength(0);
+  });
+});
