@@ -22,7 +22,9 @@ import { useEditorStore } from '../state/editorStore';
 import type { Tool } from '../state/editorStore';
 import {
   buildPageOps,
+  countAnnotsOnDeletedPages,
   countPendingOps,
+  deletedPageNumbers,
   initPages,
   toAnnotationInputs,
 } from '../state/opsQueue';
@@ -83,6 +85,7 @@ export function EditorScreen({ docId, navigate }: Props) {
   const [renameVal, setRenameVal] = useState('');
   const [saving, setSaving] = useState(false);
   const [signing, setSigning] = useState<SigningTarget | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const metaQuery = useQuery({
     queryKey: ['meta', docId],
@@ -98,6 +101,12 @@ export function EditorScreen({ docId, navigate }: Props) {
   const view = usePdfDocument(viewUrl);
 
   // (Re)initialize pending state when a (new) head PDF arrives.
+  //
+  // `store` is deliberately omitted from the deps: useEditorStore() returns a
+  // new state snapshot on every store update, but store.init is a stable
+  // zustand action whose identity never changes. Depending on the whole
+  // snapshot would re-run this effect after every pending edit and wipe the
+  // user's unsaved changes; only a doc switch or a new head PDF may re-init.
   useEffect(() => {
     if (head.pdf) store.init(docId, head.pdf.pageCount);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,11 +126,21 @@ export function EditorScreen({ docId, navigate }: Props) {
   const pendingCount = countPendingOps(store.pages, store.annots, store.stamps);
   const dirty = pendingCount > 0;
 
-  const save = useCallback(async () => {
+  // Annotations/stamps on pages that are themselves pending deletion would be
+  // destroyed by the page delete in the same save; count them so save() can
+  // ask before silently discarding work.
+  const doomedCount = countAnnotsOnDeletedPages(store.pages, store.annots, store.stamps);
+
+  const doSave = useCallback(async () => {
     if (!dirty || viewing != null || saving) return;
     setSaving(true);
     try {
-      const annPayload = toAnnotationInputs(store.annots);
+      // Skip annotations/stamps targeting deleted pages: the page op below
+      // would destroy them anyway, and posting them would only create
+      // throwaway versions. save() has already confirmed the discard.
+      const deleted = deletedPageNumbers(store.pages);
+      const annPayload = toAnnotationInputs(store.annots.filter((a) => !deleted.has(a.page)));
+      const keptStamps = store.stamps.filter((s) => !deleted.has(s.page));
       const pageOps = buildPageOps(store.pages);
       let lastVersion: number | null = null;
       if (annPayload.length > 0) {
@@ -130,7 +149,7 @@ export function EditorScreen({ docId, navigate }: Props) {
       }
       // Stamps go after annotations and before page ops: neither annotations
       // nor stamps renumber pages, so head-version page numbers stay valid.
-      for (const s of store.stamps) {
+      for (const s of keptStamps) {
         const doc = await stampSignature(docId, s.page, s.rect, dataUrlToBlob(s.dataUrl));
         lastVersion = doc.headVersion;
       }
@@ -147,6 +166,15 @@ export function EditorScreen({ docId, navigate }: Props) {
       setSaving(false);
     }
   }, [dirty, viewing, saving, store, docId, invalidateDoc, push]);
+
+  const save = useCallback(async () => {
+    if (!dirty || viewing != null || saving) return;
+    if (doomedCount > 0) {
+      setConfirmDiscard(true);
+      return;
+    }
+    await doSave();
+  }, [dirty, viewing, saving, doomedCount, doSave]);
 
   /* ---- sign tool ---- */
   const applySignature = useCallback(
@@ -464,6 +492,23 @@ export function EditorScreen({ docId, navigate }: Props) {
       </div>
       {signing && (
         <SignatureModal onApply={applySignature} onCancel={() => setSigning(null)} />
+      )}
+      {confirmDiscard && (
+        <Modal
+          title="Discard annotations on deleted pages?"
+          confirmLabel="Save anyway"
+          danger
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            void doSave();
+          }}
+          onCancel={() => setConfirmDiscard(false)}
+        >
+          {doomedCount === 1
+            ? '1 annotation is on a page being deleted and will be discarded'
+            : `${doomedCount} annotations are on pages being deleted and will be discarded`}{' '}
+          — continue?
+        </Modal>
       )}
       {docModal === 'rename' && (
         <Modal

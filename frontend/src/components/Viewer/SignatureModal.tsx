@@ -1,6 +1,6 @@
 /** "Add your signature" modal: Draw (canvas pad → ink annotation) or Image
- * (PNG/JPEG upload → server-side stamp). Cryptographic signing is out of
- * scope and shown as a disabled item. */
+ * (PNG/JPEG upload → server-side stamp). Cryptographic signing (certificates)
+ * is out of scope and intentionally not surfaced in the UI. */
 import { useEffect, useRef, useState } from 'react';
 import { useOutside } from '../shared/useOutside';
 import { useToast } from '../shared/toastContext';
@@ -194,10 +194,6 @@ export function SignatureModal({ onApply, onCancel }: Props) {
               )}
             </div>
           )}
-          <button className="sig-cert" disabled title="Coming later">
-            <Icon name="lock" size={14} />
-            Certificates &amp; digital signing — not available
-          </button>
         </div>
         <div className="m-foot">
           <button className="btn" onClick={onCancel}>

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPageOps,
+  countAnnotsOnDeletedPages,
   countPendingOps,
+  deletedPageNumbers,
   deletePage,
   initPages,
   orderChanged,
@@ -224,5 +226,46 @@ describe('toAnnotationInputs', () => {
     const wire = toAnnotationInputs(annots);
     expect(wire).toHaveLength(1);
     expect(wire[0].type).toBe('highlight');
+  });
+});
+
+describe('countAnnotsOnDeletedPages', () => {
+  const annots: PendingAnnotation[] = [
+    { id: 'a1', type: 'highlight', page: 1, rect: [0, 0, 10, 10], color: '#fde047' },
+    { id: 'a2', type: 'ink', page: 2, rect: [0, 0, 10, 10], color: '#ef4444', paths: [[1, 2, 3, 4]] },
+    { id: 'a3', type: 'highlight', page: 3, rect: [0, 0, 10, 10], color: '#fde047' },
+  ];
+  const stamps: PendingStamp[] = [
+    { id: 's1', page: 2, rect: [0, 0, 50, 20], dataUrl: 'data:image/png;base64,x' },
+  ];
+
+  it('returns 0 when no pages are pending deletion', () => {
+    expect(countAnnotsOnDeletedPages(initPages(3), annots, stamps)).toBe(0);
+  });
+
+  it('counts annotations and stamps on pages pending deletion', () => {
+    const pages = deletePage(initPages(3), 'p2');
+    // a2 (ink on p2) + s1 (stamp on p2); a1/a3 are on kept pages
+    expect(countAnnotsOnDeletedPages(pages, annots, stamps)).toBe(2);
+  });
+
+  it('counts across multiple deleted pages', () => {
+    const pages = deletePage(deletePage(initPages(3), 'p2'), 'p3');
+    expect(countAnnotsOnDeletedPages(pages, annots, stamps)).toBe(3);
+  });
+
+  it('ignores empty text annotations — they are never saved anyway', () => {
+    const pages = deletePage(initPages(3), 'p2');
+    const withEmptyText: PendingAnnotation[] = [
+      { id: 't1', type: 'text', page: 2, rect: [0, 0, 10, 10], color: '#111827', contents: ' ', fontSize: 14 },
+    ];
+    expect(countAnnotsOnDeletedPages(pages, withEmptyText, [])).toBe(0);
+  });
+});
+
+describe('deletedPageNumbers', () => {
+  it('returns the head-version numbers of pages pending deletion', () => {
+    const pages = deletePage(deletePage(initPages(4), 'p1'), 'p3');
+    expect([...deletedPageNumbers(pages)].sort()).toEqual([1, 3]);
   });
 });
