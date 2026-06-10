@@ -14,6 +14,15 @@ export function clampThumbWidth(width: number): number {
   return Math.min(Math.max(Math.round(width), 1), THUMB_MAX_WIDTH);
 }
 
+/** Pixel width to request from the server for a thumbnail displayed at
+ * cssWidth: 3x on HiDPI screens (DPR >= 2), 2x otherwise, clamped to the
+ * server cap. Oversampling keeps cards crisp; CSS only ever scales the
+ * image DOWN from its natural size, never up. */
+export function thumbRequestWidth(cssWidth: number, devicePixelRatio: number): number {
+  const multiplier = (devicePixelRatio || 1) >= 2 ? 3 : 2;
+  return clampThumbWidth(cssWidth * multiplier);
+}
+
 /** URL of a server-rendered PNG of one page of the head version.
  * Version-tagged (?v=) so browser caches bust when a new version is saved. */
 export function thumbnailUrl(
