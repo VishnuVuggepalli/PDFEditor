@@ -30,6 +30,7 @@ func NewRouter(h *Handlers, allowedOrigins []string) *gin.Engine {
 		v1.POST("/documents/:id/versions/:n/restore", h.RestoreVersion)
 		v1.POST("/documents/:id/pages/ops", h.PageOps)
 		v1.POST("/documents/:id/annotations", h.Annotate)
+		v1.POST("/documents/:id/content", h.ReplaceContent)
 		v1.POST("/documents/:id/stamp", h.Stamp)
 		v1.GET("/documents/:id/form", h.FormFields)
 		v1.POST("/documents/:id/form", h.FillForm)
