@@ -10,36 +10,83 @@
       import { canEditText } from '/src/pdf/engineApi';
 
       const url = '/fixtures/sample.pdf';
+      const heavyUrl = '/fixtures/heavy.pdf'; // scripts/gen-heavy-fixture.mjs
 
-      async function measure(name, loader) {
-        const t0 = performance.now();
-        const pdf = await loader(url);
-        const t1 = performance.now();
-        const page = await pdf.page(1);
-        const canvas = document.createElement('canvas');
-        document.body.appendChild(canvas);
-        await page.render(canvas, 1.5);
-        const t2 = performance.now();
-        await page.render(canvas, 1.51); // warm re-render (zoom tick)
-        const t3 = performance.now();
-        const text = await page.text();
-        const tl = document.createElement('div');
-        tl.className = 'textLayer';
-        document.body.appendChild(tl);
-        await page.renderTextLayer(tl, 1.5);
+      /** Measure main-thread blocking while fn runs via a MessageChannel
+       * heartbeat: any gap > 50ms between ticks is a "long task". (The
+       * PerformanceObserver 'longtask' entry type is not delivered in
+       * headless Chromium, so we probe responsiveness directly.) */
+      async function withLongTasks(fn) {
+        const tasks = [];
+        const chan = new MessageChannel();
+        let last = performance.now();
+        let running = true;
+        chan.port1.onmessage = () => {
+          const now = performance.now();
+          if (now - last > 50) tasks.push(now - last);
+          last = now;
+          if (running) chan.port2.postMessage(0);
+        };
+        chan.port2.postMessage(0);
+        try {
+          const value = await fn();
+          await new Promise((r) => setTimeout(r, 50));
+          return { value, tasks };
+        } finally {
+          running = false;
+          chan.port1.close();
+          chan.port2.close();
+        }
+      }
+
+      function longTaskStats(tasks) {
         return {
-          name,
-          loadMs: +(t1 - t0).toFixed(1),
-          firstRenderMs: +(t2 - t1).toFixed(1),
-          warmRenderMs: +(t3 - t2).toFixed(1),
-          pages: pdf.pageCount,
-          textSample: text.slice(0, 40),
-          spanCount: tl.querySelectorAll(':scope > span').length,
-          canvasW: canvas.width,
+          longTasks: tasks.length,
+          longTaskTotalMs: +tasks.reduce((a, b) => a + b, 0).toFixed(1),
+          longTaskMaxMs: +(tasks.length ? Math.max(...tasks) : 0).toFixed(1),
         };
       }
 
+      async function measure(name, loader, docUrl = url) {
+        const { value, tasks } = await withLongTasks(async () => {
+          const t0 = performance.now();
+          const pdf = await loader(docUrl);
+          const t1 = performance.now();
+          const page = await pdf.page(1);
+          const canvas = document.createElement('canvas');
+          document.body.appendChild(canvas);
+          await page.render(canvas, 1.5);
+          const t2 = performance.now();
+          await page.render(canvas, 1.51); // warm re-render (zoom tick)
+          const t3 = performance.now();
+          await page.render(canvas, 3); // large render (zoom-in stress)
+          const t4 = performance.now();
+          const text = await page.text();
+          const tl = document.createElement('div');
+          tl.className = 'textLayer';
+          document.body.appendChild(tl);
+          await page.renderTextLayer(tl, 1.5);
+          return {
+            name,
+            loadMs: +(t1 - t0).toFixed(1),
+            firstRenderMs: +(t2 - t1).toFixed(1),
+            warmRenderMs: +(t3 - t2).toFixed(1),
+            bigRenderMs: +(t4 - t3).toFixed(1),
+            pages: pdf.pageCount,
+            textSample: text.slice(0, 40),
+            spanCount: tl.querySelectorAll(':scope > span').length,
+            canvasW: canvas.width,
+          };
+        });
+        return { ...value, ...longTaskStats(tasks) };
+      }
+
       async function editRoundTrip() {
+        const { value, tasks } = await withLongTasks(() => editRoundTripInner());
+        return { ...value, ...longTaskStats(tasks) };
+      }
+
+      async function editRoundTripInner() {
         const pdf = await loadPdfMupdf(url);
         if (!canEditText(pdf)) return { error: 'edit capability missing' };
         // First line of the fixture sits at fitz y 96..128 -> PDF y 714..746.
@@ -60,8 +107,10 @@
       window.__run = (async () => {
         const pdfjs = await measure('pdfjs', loadPdf);
         const mupdf = await measure('mupdf', loadPdfMupdf);
+        const pdfjsHeavy = await measure('pdfjs-heavy', loadPdf, heavyUrl);
+        const mupdfHeavy = await measure('mupdf-heavy', loadPdfMupdf, heavyUrl);
         const edit = await editRoundTrip();
-        return { pdfjs, mupdf, edit };
+        return { pdfjs, mupdf, pdfjsHeavy, mupdfHeavy, edit };
       })();
     </script>
   </body>
