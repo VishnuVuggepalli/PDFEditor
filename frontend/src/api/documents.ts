@@ -34,6 +34,14 @@ export function deleteDocument(id: string): Promise<{ deleted: string }> {
   });
 }
 
+/** Delete one version from the history. The server rejects deleting v1 (the
+ * original), the head version, and the only remaining version. */
+export function deleteVersion(id: string, n: number): Promise<DocumentRecord> {
+  return request<DocumentRecord>(`/documents/${encodeURIComponent(id)}/versions/${n}`, {
+    method: 'DELETE',
+  });
+}
+
 export function restoreVersion(id: string, n: number): Promise<DocumentRecord> {
   return request<DocumentRecord>(
     `/documents/${encodeURIComponent(id)}/versions/${n}/restore`,

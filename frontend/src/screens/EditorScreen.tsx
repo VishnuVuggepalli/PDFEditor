@@ -6,6 +6,7 @@ import {
   addAnnotations,
   applyPageOps,
   deleteDocument,
+  deleteVersion,
   downloadToDisk,
   duplicateDocument,
   getMeta,
@@ -202,6 +203,16 @@ export function EditorScreen({ docId, navigate }: Props) {
         title: `Restored v${n} as v${doc.headVersion}`,
         msg: 'Previous version kept in history.',
       });
+    },
+  });
+
+  const deleteVersionMut = useMutation({
+    mutationFn: (n: number) => deleteVersion(docId, n),
+    onSuccess: (_doc, n) => {
+      // If the deleted version was open read-only, fall back to the head.
+      setViewing((v) => (v === n ? null : v));
+      invalidateDoc();
+      push({ type: 'success', title: `Deleted v${n}`, msg: 'Removed from version history.' });
     },
   });
 
@@ -448,6 +459,7 @@ export function EditorScreen({ docId, navigate }: Props) {
           viewing={viewing}
           onView={viewVersion}
           onRestore={(n) => restoreMut.mutate(n)}
+          onDeleteVersion={(n) => deleteVersionMut.mutate(n)}
         />
       </div>
       {signing && (
