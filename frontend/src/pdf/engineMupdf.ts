@@ -17,37 +17,9 @@ import {
   type StextLine,
   type TextLinesResult,
 } from './mupdfProtocol';
+import { buildTextLayer } from './mupdfTextLayer';
 import { getMupdfRpc } from './mupdfWorkerClient';
-import {
-  displayMatrix,
-  displayOrigin,
-  lineAt,
-  matInvert,
-  transformPoint,
-  transformRect,
-} from './mupdfTransforms';
-
-function cssFamily(family: string): string {
-  return family === 'serif' || family === 'monospace' ? family : 'sans-serif';
-}
-
-/* ---- shared measuring canvas for text layer scaleX correction ---- */
-
-let measureCtx: CanvasRenderingContext2D | null | undefined;
-
-function measureWidth(text: string, fontPx: number, family: string): number | null {
-  if (measureCtx === undefined) {
-    try {
-      measureCtx = document.createElement('canvas').getContext('2d');
-    } catch {
-      measureCtx = null;
-    }
-  }
-  if (!measureCtx) return null;
-  measureCtx.font = `${fontPx}px ${cssFamily(family)}`;
-  const w = measureCtx.measureText(text).width;
-  return Number.isFinite(w) && w > 0 ? w : null;
-}
+import { lineAt, matInvert, transformPoint, transformRect } from './mupdfTransforms';
 
 class MupdfPage implements PageHandle {
   readonly n: number;
@@ -124,33 +96,9 @@ class MupdfPage implements PageHandle {
 
   async renderTextLayer(container: HTMLDivElement, scale: number, extraRotation = 0): Promise<void> {
     const lines = await this.lines();
-    container.replaceChildren();
-    container.style.setProperty('--scale-factor', String(scale));
-    const m = displayMatrix(scale, extraRotation);
-    const [ox, oy] = displayOrigin(this.info.bounds, m);
-    const rot = ((extraRotation % 360) + 360) % 360;
-    for (const line of lines) {
-      if (!line.text) continue;
-      const span = document.createElement('span');
-      span.textContent = line.text;
-      // Anchor: image of the line's fitz top-left corner. With
-      // transform-origin 0 0 and rotate(extra), the span box covers the
-      // transformed line region for every 90-degree rotation.
-      const [ax, ay] = transformPoint(m, line.bbox.x, line.bbox.y);
-      span.style.left = `${ax - ox}px`;
-      span.style.top = `${ay - oy}px`;
-      const fontPx = line.font.size * scale;
-      span.style.fontSize = `${fontPx}px`;
-      span.style.fontFamily = cssFamily(line.font.family);
-      const target = line.bbox.w * scale;
-      const measured = measureWidth(line.text, fontPx, line.font.family);
-      const sx = measured ? target / measured : 1;
-      const parts: string[] = [];
-      if (rot !== 0) parts.push(`rotate(${rot}deg)`);
-      if (Math.abs(sx - 1) > 0.001) parts.push(`scaleX(${sx.toFixed(4)})`);
-      if (parts.length) span.style.transform = parts.join(' ');
-      container.appendChild(span);
-    }
+    // DocumentFragment batching + idle chunking for dense pages: see
+    // mupdfTextLayer.ts. Superseded builds (zoom changes) resolve quietly.
+    await buildTextLayer(container, lines, this.info.bounds, scale, extraRotation);
   }
 
   async text(): Promise<string> {

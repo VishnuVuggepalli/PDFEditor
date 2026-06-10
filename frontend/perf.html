@@ -65,13 +65,19 @@
           const tl = document.createElement('div');
           tl.className = 'textLayer';
           document.body.appendChild(tl);
+          const t5 = performance.now();
           await page.renderTextLayer(tl, 1.5);
+          const t6 = performance.now();
+          await page.renderTextLayer(tl, 1.51); // warm rebuild (zoom tick)
+          const t7 = performance.now();
           return {
             name,
             loadMs: +(t1 - t0).toFixed(1),
             firstRenderMs: +(t2 - t1).toFixed(1),
             warmRenderMs: +(t3 - t2).toFixed(1),
             bigRenderMs: +(t4 - t3).toFixed(1),
+            textLayerMs: +(t6 - t5).toFixed(1),
+            textLayerWarmMs: +(t7 - t6).toFixed(1),
             pages: pdf.pageCount,
             textSample: text.slice(0, 40),
             spanCount: tl.querySelectorAll(':scope > span').length,
