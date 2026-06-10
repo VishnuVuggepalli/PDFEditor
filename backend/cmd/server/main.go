@@ -27,17 +27,13 @@ func main() {
 	}
 }
 
-func run() error {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-
-	cfg, err := config.Load()
+// buildServer wires the full application stack — store, service, thumbnail
+// cache, router — into an http.Server bound to cfg.Port. Pure construction:
+// nothing listens until the caller serves it, which keeps it testable.
+func buildServer(cfg config.Config) (*http.Server, error) {
+	st, err := store.NewFSStore(cfg.DataDir, store.WithMaxVersions(cfg.MaxVersionsPerDoc))
 	if err != nil {
-		return err
-	}
-
-	st, err := store.NewFSStore(cfg.DataDir)
-	if err != nil {
-		return err
+		return nil, err
 	}
 
 	svc := document.NewService(st, pdf.NewEngine())
@@ -46,7 +42,7 @@ func run() error {
 	h.SetThumbs(document.NewThumbService(svc, raster.New(), filepath.Join(cfg.DataDir, "documents")))
 	router := api.NewRouter(h, cfg.AllowedOrigins)
 
-	srv := &http.Server{
+	return &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -54,6 +50,20 @@ func run() error {
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
+	}, nil
+}
+
+func run() error {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	srv, err := buildServer(cfg)
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

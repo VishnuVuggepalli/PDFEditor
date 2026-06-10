@@ -96,6 +96,22 @@ At startup the backend walks `data/documents/*/meta.json` once and builds an
 in-memory index (map) for fast list/search. The index is derived state —
 rebuilt on every boot, never persisted.
 
+**Retention policy.** Every save writes a full new `vN.pdf`, so unbounded
+history grows linearly with edits (a 1.6 MB document edited 50× would hold
+80 MB). The store therefore applies a keep-last-N policy on every append:
+`MAX_VERSIONS_PER_DOC` (default 20, `0` = unlimited) caps the number of
+versions per document. Two hard guarantees override the cap: `v1` (the
+original upload) is never pruned, and the current head version is never
+pruned. Pruning runs inside `store.AddVersion` under the same write lock as
+the append; the oldest non-v1, non-head versions are dropped first.
+Survivors keep their version numbers — histories may have gaps (e.g.
+`v1, v17..v37`) — so all consumers check version existence against the
+`versions` array, never against a contiguous `1..headVersion` range.
+meta.json is rewritten atomically (append + prune in one write) before the
+pruned `vK.pdf` files and their cached thumbnails (`thumbs/vK-*.png`) are
+removed, so a crash can leave an orphaned file at worst — never metadata
+pointing at a missing version.
+
 ### Deployment — Docker with persistent storage
 
 ```

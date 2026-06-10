@@ -13,6 +13,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Port != "8000" || cfg.DataDir != "data" || cfg.MaxUploadMB != 50 {
 		t.Errorf("unexpected defaults: %+v", cfg)
 	}
+	if cfg.MaxVersionsPerDoc != 20 {
+		t.Errorf("MaxVersionsPerDoc default: want 20, got %d", cfg.MaxVersionsPerDoc)
+	}
 	if cfg.MaxUploadBytes() != 50<<20 {
 		t.Errorf("MaxUploadBytes: %d", cfg.MaxUploadBytes())
 	}
@@ -66,6 +69,38 @@ func TestLoadInvalidMaxUpload(t *testing.T) {
 			t.Setenv("MAX_UPLOAD_MB", v)
 			if _, err := Load(); err == nil {
 				t.Errorf("want error for MAX_UPLOAD_MB=%q", v)
+			}
+		})
+	}
+}
+
+func TestLoadMaxVersionsPerDoc(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     string
+		want    int
+		wantErr bool
+	}{
+		{"explicit cap", "3", 3, false},
+		{"zero means unlimited", "0", 0, false},
+		{"negative rejected", "-1", 0, true},
+		{"non-numeric rejected", "abc", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MAX_VERSIONS_PER_DOC", tt.env)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("want error for MAX_VERSIONS_PER_DOC=%q", tt.env)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.MaxVersionsPerDoc != tt.want {
+				t.Errorf("MaxVersionsPerDoc: want %d, got %d", tt.want, cfg.MaxVersionsPerDoc)
 			}
 		})
 	}

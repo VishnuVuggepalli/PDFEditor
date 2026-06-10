@@ -18,10 +18,22 @@ interface Props {
   viewing: number | null;
   onView: (n: number) => void;
   onRestore: (n: number) => void;
+  onDeleteVersion: (n: number) => void;
 }
 
 export function VersionPanel(props: Props) {
-  const { meta, visiblePages, collapsed, setCollapsed, tab, setTab, viewing, onView, onRestore } = props;
+  const {
+    meta,
+    visiblePages,
+    collapsed,
+    setCollapsed,
+    tab,
+    setTab,
+    viewing,
+    onView,
+    onRestore,
+    onDeleteVersion,
+  } = props;
   const hasForm = meta.pdf.hasForm;
 
   if (collapsed) {
@@ -102,6 +114,7 @@ export function VersionPanel(props: Props) {
             viewing={viewing}
             onView={onView}
             onRestore={onRestore}
+            onDelete={onDeleteVersion}
           />
         )}
         {tab === 'forms' && (

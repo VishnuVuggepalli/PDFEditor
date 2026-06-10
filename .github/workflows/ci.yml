@@ -75,3 +75,82 @@ jobs:
 
       - name: Build (tsc -b + vite build)
         run: npm run build
+
+  e2e:
+    name: E2E (Playwright smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install poppler-utils (pdftoppm for thumbnails)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # Building both Docker images is too heavy for free runners; run the
+      # real stack directly instead: `go run` backend + Vite dev server.
+      - name: Start backend (go run, port 8801, temp data dir)
+        working-directory: backend
+        run: |
+          PORT=8801 DATA_DIR="$(mktemp -d)" nohup go run ./cmd/server > /tmp/e2e-backend.log 2>&1 &
+
+      - name: Start frontend (vite dev, port 5199, proxying to 8801)
+        working-directory: frontend
+        run: |
+          BACKEND_URL=http://localhost:8801 nohup npm run dev -- --port 5199 --strictPort > /tmp/e2e-vite.log 2>&1 &
+
+      - name: Wait for servers
+        run: |
+          for i in $(seq 1 120); do
+            curl -fsS http://localhost:8801/healthz > /dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8801/healthz
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:5199/ > /dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://localhost:5199/
+          # End-to-end through the Vite proxy to the backend.
+          curl -fsS http://localhost:5199/api/v1/documents
+
+      - name: Run smoke test
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:5199
+        run: node e2e/smoke.mjs
+
+      - name: Server logs on failure
+        if: failure()
+        run: |
+          echo "--- backend ---"; tail -n 100 /tmp/e2e-backend.log || true
+          echo "--- vite ---"; tail -n 100 /tmp/e2e-vite.log || true
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: /tmp/pdfeditor-e2e/
+          if-no-files-found: ignore

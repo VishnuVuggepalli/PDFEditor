@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -38,10 +40,16 @@ func New() *PDFToPPM {
 	return &PDFToPPM{bin: defaultBin, timeout: defaultTimeout}
 }
 
-// PagePNG renders one 1-based page of pdf as a PNG scaled to width pixels
+// PagePNG renders one 1-based page of pdf as a PNG at least width pixels
 // wide (height proportional). The PDF is staged in a temp file because
 // pdftoppm wants a seekable input; the single-page PNG arrives on stdout
 // (pdftoppm writes to stdout when no output prefix is given).
+//
+// pdftoppm's -scale-to-x applies to the page's PRE-rotation x axis, so a
+// page with /Rotate 90 or 270 gets the requested width on what ends up
+// being the output's HEIGHT. When that leaves the output narrower than
+// requested (under-resolved), the page is re-rendered proportionally
+// larger so the returned raster is never softer than asked for.
 func (p *PDFToPPM) PagePNG(ctx context.Context, pdf []byte, page, width int) ([]byte, error) {
 	if len(pdf) == 0 {
 		return nil, errors.New("raster: empty pdf input")
@@ -70,13 +78,37 @@ func (p *PDFToPPM) PagePNG(ctx context.Context, pdf []byte, page, width int) ([]
 		return nil, fmt.Errorf("raster: close temp pdf: %w", err)
 	}
 
+	out, err := p.renderPage(ctx, tmp.Name(), page, width)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := png.DecodeConfig(bytes.NewReader(out))
+	if err != nil {
+		return nil, fmt.Errorf("raster: decode rendered png header for page %d: %w", page, err)
+	}
+	if cfg.Width >= width {
+		return out, nil
+	}
+
+	// Orientation flip under-resolved the output (e.g. landscape MediaBox +
+	// /Rotate 90 displays portrait). Scaling is linear, so retarget
+	// -scale-to-x by the shortfall ratio to land the requested final width,
+	// aiming one pixel high to absorb pdftoppm's internal rounding.
+	scaleToX := int(math.Ceil(float64(width+1) * float64(width) / float64(cfg.Width)))
+	return p.renderPage(ctx, tmp.Name(), page, scaleToX)
+}
+
+// renderPage invokes pdftoppm once for a single page with -scale-to-x and
+// returns the PNG bytes from stdout.
+func (p *PDFToPPM) renderPage(ctx context.Context, path string, page, scaleToX int) ([]byte, error) {
 	n := strconv.Itoa(page)
 	cmd := exec.CommandContext(ctx, p.bin,
 		"-png",
 		"-f", n, "-l", n,
-		"-scale-to-x", strconv.Itoa(width),
+		"-scale-to-x", strconv.Itoa(scaleToX),
 		"-scale-to-y", "-1",
-		tmp.Name(),
+		path,
 	)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errBuf
@@ -90,10 +122,10 @@ func (p *PDFToPPM) PagePNG(ctx context.Context, pdf []byte, page, width int) ([]
 		return nil, fmt.Errorf("raster: pdftoppm page %d: %w (stderr: %s)", page, err, stderr)
 	}
 
-	png := out.Bytes()
-	if !bytes.HasPrefix(png, pngMagic) {
+	b := out.Bytes()
+	if !bytes.HasPrefix(b, pngMagic) {
 		return nil, fmt.Errorf("raster: pdftoppm produced no PNG for page %d (stderr: %s)",
 			page, strings.TrimSpace(errBuf.String()))
 	}
-	return png, nil
+	return b, nil
 }

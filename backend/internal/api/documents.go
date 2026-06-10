@@ -146,6 +146,22 @@ func (h *Handlers) DownloadVersion(c *gin.Context) {
 	c.Data(http.StatusOK, "application/pdf", b)
 }
 
+// DeleteVersion handles DELETE /api/v1/documents/:id/versions/:n — removes
+// one non-head, non-original version from the history.
+func (h *Handlers) DeleteVersion(c *gin.Context) {
+	n, err := strconv.Atoi(c.Param("n"))
+	if err != nil {
+		fail(c, fmt.Errorf("%w: version must be a number", document.ErrInvalidInput))
+		return
+	}
+	doc, err := h.svc.DeleteVersion(c.Request.Context(), c.Param("id"), n)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, http.StatusOK, doc)
+}
+
 // RestoreVersion handles POST /api/v1/documents/:id/versions/:n/restore.
 func (h *Handlers) RestoreVersion(c *gin.Context) {
 	n, err := strconv.Atoi(c.Param("n"))

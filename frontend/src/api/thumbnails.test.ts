@@ -4,6 +4,7 @@ import {
   THUMB_DEFAULT_WIDTH,
   THUMB_MAX_WIDTH,
   thumbnailUrl,
+  thumbRequestWidth,
 } from './thumbnails';
 
 describe('clampThumbWidth', () => {
@@ -20,6 +21,27 @@ describe('clampThumbWidth', () => {
     [Infinity, THUMB_DEFAULT_WIDTH],
   ])('clamps %s to %s', (input, want) => {
     expect(clampThumbWidth(input)).toBe(want);
+  });
+});
+
+describe('thumbRequestWidth', () => {
+  it.each([
+    // standard displays request 2x the CSS width
+    [210, 1, 420],
+    [40, 1, 80],
+    [210, 1.5, 420],
+    // HiDPI (DPR >= 2) requests 3x for extra sharpness
+    [210, 2, 630],
+    [210, 3, 630],
+    [40, 2, 120],
+    // clamped to the server max
+    [400, 2, 1024],
+    [600, 1, 1024],
+    // invalid DPR falls back to 1 (2x)
+    [210, 0, 420],
+    [210, NaN, 420],
+  ])('cssWidth %s at DPR %s requests %s', (cssWidth, dpr, want) => {
+    expect(thumbRequestWidth(cssWidth, dpr)).toBe(want);
   });
 });
 

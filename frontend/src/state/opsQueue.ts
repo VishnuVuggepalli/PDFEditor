@@ -137,13 +137,40 @@ export function countPendingOps(
   return rotated + deleted + (orderChanged(pages) ? 1 : 0) + annots.length + stamps.length;
 }
 
+/** True for annotations worth saving: everything except text annotations
+ * that were left empty (created then never typed into). */
+function isSavableAnnotation(a: PendingAnnotation): boolean {
+  return a.type !== 'text' || (a.contents ?? '').trim() !== '';
+}
+
+/** Head-version page numbers pending deletion. */
+export function deletedPageNumbers(pages: ReadonlyArray<EditorPage>): Set<number> {
+  return new Set(pages.filter((p) => p.deleted).map((p) => p.origN));
+}
+
+/** Count savable annotations and stamps that target pages pending deletion.
+ * They would be destroyed by the page delete in the same save, so the editor
+ * asks for confirmation before discarding them. */
+export function countAnnotsOnDeletedPages(
+  pages: ReadonlyArray<EditorPage>,
+  annots: ReadonlyArray<PendingAnnotation>,
+  stamps: ReadonlyArray<PendingStamp> = [],
+): number {
+  const deleted = deletedPageNumbers(pages);
+  if (deleted.size === 0) return 0;
+  return (
+    annots.filter((a) => deleted.has(a.page) && isSavableAnnotation(a)).length +
+    stamps.filter((s) => deleted.has(s.page)).length
+  );
+}
+
 /** Convert pending annotations to the wire format. Text annotations that
  * were left empty (created then never typed into) are dropped. */
 export function toAnnotationInputs(
   annots: ReadonlyArray<PendingAnnotation>,
 ): AnnotationInput[] {
   return annots
-    .filter((a) => a.type !== 'text' || (a.contents ?? '').trim() !== '')
+    .filter(isSavableAnnotation)
     .map((a) => {
       const out: AnnotationInput = {
         type: a.type,

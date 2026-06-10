@@ -22,6 +22,9 @@ type Store interface {
 	Rename(ctx context.Context, id string, name string) (*Document, error)
 	// Delete removes the document and all of its versions.
 	Delete(ctx context.Context, id string) error
+	// DeleteVersion removes one version (never v1, the head, or the only
+	// remaining version) and returns the updated record.
+	DeleteVersion(ctx context.Context, id string, n int) (*Document, error)
 }
 
 // Engine is what the service needs from a PDF engine. Implemented by
@@ -154,6 +157,17 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("delete document: %w", err)
 	}
 	return nil
+}
+
+// DeleteVersion removes one version from a document's history. The store
+// enforces the guards (v1, head, and the only remaining version are
+// undeletable) atomically under its lock.
+func (s *Service) DeleteVersion(ctx context.Context, id string, n int) (*Document, error) {
+	doc, err := s.store.DeleteVersion(ctx, id, n)
+	if err != nil {
+		return nil, fmt.Errorf("delete version v%d: %w", n, err)
+	}
+	return doc, nil
 }
 
 // RestoreVersion copies version n's bytes as a new head version.
