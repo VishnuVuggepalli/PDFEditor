@@ -105,6 +105,21 @@ func (f *fakeEngine) ExtractPages(pdf []byte, pages []int) ([]byte, error) {
 	return f.mark(pdf, fmt.Sprintf("extract%d", len(pages))), nil
 }
 
+func (f *fakeEngine) Annotate(pdf []byte, annots []Annotation) ([]byte, error) {
+	return f.mark(pdf, fmt.Sprintf("annotate%d", len(annots))), nil
+}
+
+func (f *fakeEngine) FormFields(pdf []byte) ([]FormField, error) {
+	return []FormField{{ID: "fullName", Type: "text"}}, nil
+}
+
+func (f *fakeEngine) FillForm(pdf []byte, values map[string]string) ([]byte, error) {
+	if _, ok := values["unknownField"]; ok {
+		return nil, fmt.Errorf("%w: unknown form field", ErrInvalidInput)
+	}
+	return f.mark(pdf, fmt.Sprintf("fill%d", len(values))), nil
+}
+
 var validPDF = []byte("%PDF-1.7 fake")
 
 func newTestService() (*Service, *fakeStore) {

@@ -37,6 +37,12 @@ type Engine interface {
 	Merge(pdfs [][]byte) ([]byte, error)
 	// ExtractPages produces a new PDF containing only the given pages.
 	ExtractPages(pdf []byte, pages []int) ([]byte, error)
+	// Annotate embeds the given (pre-validated) annotations into the PDF.
+	Annotate(pdf []byte, annots []Annotation) ([]byte, error)
+	// FormFields lists AcroForm fields.
+	FormFields(pdf []byte) ([]FormField, error)
+	// FillForm sets field values keyed by field ID or name.
+	FillForm(pdf []byte, values map[string]string) ([]byte, error)
 }
 
 // Service orchestrates the store and the PDF engine. All document mutations
