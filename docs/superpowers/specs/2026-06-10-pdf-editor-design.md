@@ -89,6 +89,27 @@ JSON sidecar (not SQLite) is deliberate for v1: zero dependencies and
 human-readable history. The `DocumentStore` interface hides this choice;
 swapping to SQLite/S3 later touches no handler code.
 
+At startup the backend walks `data/documents/*/meta.json` once and builds an
+in-memory index (map) for fast list/search. The index is derived state —
+rebuilt on every boot, never persisted.
+
+### Deployment — Docker with persistent storage
+
+```
+docker-compose.yml
+├── backend    Go binary; /app/data mounted from host
+├── frontend   nginx serving the built React app, proxies /api to backend
+└── bind mount ./data ↔ /app/data   (all state lives on the host)
+```
+
+- Containers are stateless and disposable; ALL state (PDF versions +
+  `meta.json`) lives in the mounted `./data` directory on the host.
+- `docker compose down`, image rebuilds, container deletion — data survives.
+  On next `up`, the backend rebuilds its index from the volume and resumes
+  exactly where it left off.
+- A future database (SQLite file or Postgres container) follows the same
+  rule: data files/volumes outside the container lifecycle.
+
 ## 5. Frontend Components
 
 | Component | Responsibility |
