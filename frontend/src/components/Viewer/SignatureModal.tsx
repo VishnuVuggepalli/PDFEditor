@@ -1,6 +1,6 @@
-/** "Add your signature" modal: Draw (canvas pad → ink annotation) or Image
- * (PNG/JPEG upload → server-side stamp). Cryptographic signing (certificates)
- * is out of scope and intentionally not surfaced in the UI. */
+/** "Add your signature" modal: Draw (canvas pad → ink annotation), Image
+ * (PNG/JPEG upload → server-side stamp), or Digital (cryptographic PKCS#7
+ * signature with the installation's certificate, applied server-side). */
 import { useEffect, useRef, useState } from 'react';
 import { useOutside } from '../shared/useOutside';
 import { useToast } from '../shared/toastContext';
@@ -21,10 +21,13 @@ interface Props {
 
 export function SignatureModal({ onApply, onCancel }: Props) {
   const push = useToast();
-  const [mode, setMode] = useState<'draw' | 'image'>('draw');
+  const [mode, setMode] = useState<'draw' | 'image' | 'digital'>('draw');
   const [color, setColor] = useState(SIGN_COLORS[0]);
   const [hasInk, setHasInk] = useState(false);
   const [image, setImage] = useState<{ dataUrl: string; aspect: number } | null>(null);
+  const [reason, setReason] = useState('');
+  const [location, setLocation] = useState('');
+  const [visibleMark, setVisibleMark] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const drawingRef = useRef(false);
@@ -114,7 +117,7 @@ export function SignatureModal({ onApply, onCancel }: Props) {
     reader.readAsDataURL(file);
   }
 
-  const canApply = mode === 'draw' ? hasInk : image !== null;
+  const canApply = mode === 'draw' ? hasInk : mode === 'image' ? image !== null : true;
   function apply() {
     if (!canApply) return;
     if (mode === 'draw') {
@@ -124,8 +127,15 @@ export function SignatureModal({ onApply, onCancel }: Props) {
         aspect: PAD_H / PAD_W,
         color,
       });
-    } else if (image) {
+    } else if (mode === 'image' && image) {
       onApply({ kind: 'image', dataUrl: image.dataUrl, aspect: image.aspect });
+    } else if (mode === 'digital') {
+      onApply({
+        kind: 'digital',
+        reason: reason.trim(),
+        location: location.trim(),
+        visible: visibleMark,
+      });
     }
   }
 
@@ -142,6 +152,9 @@ export function SignatureModal({ onApply, onCancel }: Props) {
             </button>
             <button className={mode === 'image' ? 'on' : ''} onClick={() => setMode('image')}>
               Image
+            </button>
+            <button className={mode === 'digital' ? 'on' : ''} onClick={() => setMode('digital')}>
+              Digital signature
             </button>
           </div>
           {mode === 'draw' ? (
@@ -172,7 +185,7 @@ export function SignatureModal({ onApply, onCancel }: Props) {
                 ))}
               </div>
             </>
-          ) : (
+          ) : mode === 'image' ? (
             <div className="sig-upload">
               {image ? (
                 <div className="sig-img-preview">
@@ -193,6 +206,43 @@ export function SignatureModal({ onApply, onCancel }: Props) {
                 </label>
               )}
             </div>
+          ) : (
+            <div className="sig-digital">
+              <label className="sig-field">
+                <span>Reason (optional)</span>
+                <input
+                  type="text"
+                  maxLength={512}
+                  placeholder="e.g. I approve this document"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </label>
+              <label className="sig-field">
+                <span>Location (optional)</span>
+                <input
+                  type="text"
+                  maxLength={512}
+                  placeholder="e.g. Home office"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
+              </label>
+              <label className="sig-check">
+                <input
+                  type="checkbox"
+                  checked={visibleMark}
+                  onChange={(e) => setVisibleMark(e.target.checked)}
+                />
+                <span>Show a visible mark on the page (signer name)</span>
+              </label>
+              <p className="sig-note">
+                Signs the document with this app’s personal certificate, proving it
+                hasn’t changed since signing. Other PDF viewers will report an
+                “unknown signer” — that’s expected for a self-signed identity.
+                Later edits will invalidate the signature.
+              </p>
+            </div>
           )}
         </div>
         <div className="m-foot">
@@ -200,7 +250,11 @@ export function SignatureModal({ onApply, onCancel }: Props) {
             Cancel
           </button>
           <button className="btn primary" disabled={!canApply} onClick={apply}>
-            Place signature
+            {mode === 'digital'
+              ? visibleMark
+                ? 'Sign & place mark'
+                : 'Sign document'
+              : 'Place signature'}
           </button>
         </div>
       </div>

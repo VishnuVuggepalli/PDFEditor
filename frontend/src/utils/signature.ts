@@ -29,7 +29,45 @@ export interface ImageSignature {
   readonly aspect: number;
 }
 
-export type SignaturePayload = DrawnSignature | ImageSignature;
+/** A cryptographic signing request from the Digital tab. The actual signing
+ * happens server-side with the installation's certificate. */
+export interface DigitalSignature {
+  readonly kind: 'digital';
+  readonly reason: string;
+  readonly location: string;
+  /** place a visible signature widget (signer name + date) at the click */
+  readonly visible: boolean;
+}
+
+export type SignaturePayload = DrawnSignature | ImageSignature | DigitalSignature;
+
+/** Aspect ratio (height / width) of the visible digital-signature widget. */
+export const DIGITAL_SIGN_ASPECT = 0.32;
+
+/** Badge descriptor for one signature validation report. */
+export interface SignatureBadge {
+  /** visual tone, mapping to existing badge styles */
+  tone: 'green' | 'amber' | 'danger';
+  label: string;
+}
+
+/** Map a signature validation status onto a UI badge. "unknown" is the
+ * expected status for documents signed by an identity outside the local
+ * trust store: the content is intact but the signer cannot be verified. */
+export function signatureBadge(sig: {
+  status: 'valid' | 'invalid' | 'unknown';
+  signer: string;
+}): SignatureBadge {
+  const who = sig.signer || 'Unknown';
+  switch (sig.status) {
+    case 'valid':
+      return { tone: 'green', label: `Valid — ${who}` };
+    case 'invalid':
+      return { tone: 'danger', label: `Invalid — ${who}` };
+    default:
+      return { tone: 'amber', label: `Unknown signer — ${who}` };
+  }
+}
 
 /** Compute the placement rect (viewport px, top-left origin) for a
  * signature centered on the clicked point, clamped inside the page. */

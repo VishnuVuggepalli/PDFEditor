@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   dataUrlToBlob,
   placementRect,
+  signatureBadge,
   strokesToViewportPaths,
   validateSignatureFile,
   MAX_SIGNATURE_IMAGE_BYTES,
@@ -82,5 +83,34 @@ describe('validateSignatureFile', () => {
       validateSignatureFile({ type: 'image/png', size: MAX_SIGNATURE_IMAGE_BYTES + 1 }),
     ).toMatch(/5 MB/);
     expect(validateSignatureFile({ type: 'image/png', size: 0 })).toMatch(/empty/);
+  });
+});
+
+describe('signatureBadge', () => {
+  it('maps valid signatures to a green badge with the signer', () => {
+    expect(signatureBadge({ status: 'valid', signer: 'Alice' })).toEqual({
+      tone: 'green',
+      label: 'Valid — Alice',
+    });
+  });
+
+  it('maps invalid signatures to a danger badge', () => {
+    expect(signatureBadge({ status: 'invalid', signer: 'Alice' })).toEqual({
+      tone: 'danger',
+      label: 'Invalid — Alice',
+    });
+  });
+
+  it('maps untrusted signers to an amber unknown-signer badge', () => {
+    expect(signatureBadge({ status: 'unknown', signer: 'Bob' })).toEqual({
+      tone: 'amber',
+      label: 'Unknown signer — Bob',
+    });
+  });
+
+  it('falls back to "Unknown" when the signer name is empty', () => {
+    expect(signatureBadge({ status: 'unknown', signer: '' }).label).toBe(
+      'Unknown signer — Unknown',
+    );
   });
 });

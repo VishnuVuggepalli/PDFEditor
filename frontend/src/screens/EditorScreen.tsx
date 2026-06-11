@@ -4,20 +4,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addAnnotations,
+  addFormFields,
+  appendFromDocument,
   applyPageOps,
   deleteDocument,
   deleteVersion,
   downloadToDisk,
   duplicateDocument,
+  getFormFields,
   getMeta,
   headPdfUrl,
+  insertBlankPages,
   renameDocument,
   replaceContent,
   restoreVersion,
+  signDocument,
   splitDocument,
   stampSignature,
   versionPdfUrl,
 } from '../api/documents';
+import { useSignatures } from '../api/useSignatures';
 import { usePdfDocument } from '../pdf/hooks';
 import { useEditorStore } from '../state/editorStore';
 import type { Tool } from '../state/editorStore';
@@ -27,12 +33,15 @@ import {
   countPendingOps,
   deletedPageNumbers,
   initPages,
+  nextFieldName,
   toAnnotationInputs,
+  toNewFormFieldInputs,
 } from '../state/opsQueue';
 import {
   dataUrlToBlob,
   placementRect,
   strokesToViewportPaths,
+  DIGITAL_SIGN_ASPECT,
   SIGN_DEFAULT_W,
 } from '../utils/signature';
 import type { SignaturePayload } from '../utils/signature';
@@ -41,7 +50,7 @@ import {
   viewportRectToPdf,
   viewportSize,
 } from '../pdf/coords';
-import type { ViewportParams } from '../pdf/coords';
+import type { PdfRect, ViewportParams } from '../pdf/coords';
 import { EditorToolbar } from '../components/Toolbar/EditorToolbar';
 import { PageSidebar } from '../components/PageSidebar/PageSidebar';
 import { Viewer } from '../components/Viewer/Viewer';
@@ -52,8 +61,9 @@ import { VersionPanel } from '../components/VersionPanel/VersionPanel';
 import type { PanelTab } from '../components/VersionPanel/VersionPanel';
 import { Modal } from '../components/shared/Modal';
 import { SplitModal } from '../components/Split/SplitModal';
+import { AppendModal } from '../components/PageSidebar/AppendModal';
 import { useToast } from '../components/shared/toastContext';
-import type { SplitRange } from '../types/document';
+import type { SignDocumentInput, SplitRange } from '../types/document';
 
 const annUid = () => 'an_' + Math.random().toString(36).slice(2, 9);
 
@@ -87,6 +97,12 @@ export function EditorScreen({ docId, navigate }: Props) {
   const [saving, setSaving] = useState(false);
   const [signing, setSigning] = useState<SigningTarget | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Saving edits onto a digitally signed head invalidates its signatures;
+  // this modal asks before proceeding.
+  const [confirmSigSave, setConfirmSigSave] = useState(false);
+  // Page-structure modals: 'guard' tells the user to save/discard pending
+  // changes first; 'append' is the append-from-document picker.
+  const [pageModal, setPageModal] = useState<'guard' | 'append' | null>(null);
 
   const metaQuery = useQuery({
     queryKey: ['meta', docId],
@@ -95,6 +111,13 @@ export function EditorScreen({ docId, navigate }: Props) {
   });
   const meta = metaQuery.data ?? null;
   const headVersion = meta?.document.headVersion ?? null;
+
+  // Existing field names feed default names for newly drawn fields.
+  const formQuery = useQuery({
+    queryKey: ['form', docId],
+    queryFn: () => getFormFields(docId),
+    enabled: !!meta?.pdf.hasForm,
+  });
 
   const headUrl = meta && headVersion != null ? headPdfUrl(docId, headVersion) : null;
   const head = usePdfDocument(headUrl);
@@ -122,15 +145,26 @@ export function EditorScreen({ docId, navigate }: Props) {
     void qc.invalidateQueries({ queryKey: ['meta', docId] });
     void qc.invalidateQueries({ queryKey: ['documents'] });
     void qc.invalidateQueries({ queryKey: ['form', docId] });
+    void qc.invalidateQueries({ queryKey: ['signatures', docId] });
   }, [qc, docId]);
 
-  const pendingCount = countPendingOps(store.pages, store.annots, store.stamps);
+  // Digital signatures on the head version; any non-invalid one is worth a
+  // warning before edits land on top of it.
+  const signatures = useSignatures(docId, headVersion);
+  const hasIntactSignature = signatures.some((s) => s.status !== 'invalid');
+
+  const pendingCount = countPendingOps(store.pages, store.annots, store.stamps, store.fields);
   const dirty = pendingCount > 0;
 
-  // Annotations/stamps on pages that are themselves pending deletion would be
-  // destroyed by the page delete in the same save; count them so save() can
-  // ask before silently discarding work.
-  const doomedCount = countAnnotsOnDeletedPages(store.pages, store.annots, store.stamps);
+  // Annotations/stamps/new fields on pages that are themselves pending
+  // deletion would be destroyed by the page delete in the same save; count
+  // them so save() can ask before silently discarding work.
+  const doomedCount = countAnnotsOnDeletedPages(
+    store.pages,
+    store.annots,
+    store.stamps,
+    store.fields,
+  );
 
   const doSave = useCallback(async () => {
     if (!dirty || viewing != null || saving) return;
@@ -142,6 +176,7 @@ export function EditorScreen({ docId, navigate }: Props) {
       const deleted = deletedPageNumbers(store.pages);
       const annPayload = toAnnotationInputs(store.annots.filter((a) => !deleted.has(a.page)));
       const keptStamps = store.stamps.filter((s) => !deleted.has(s.page));
+      const fieldPayload = toNewFormFieldInputs(store.fields.filter((f) => !deleted.has(f.page)));
       const pageOps = buildPageOps(store.pages);
       let lastVersion: number | null = null;
       if (annPayload.length > 0) {
@@ -152,6 +187,12 @@ export function EditorScreen({ docId, navigate }: Props) {
       // nor stamps renumber pages, so head-version page numbers stay valid.
       for (const s of keptStamps) {
         const doc = await stampSignature(docId, s.page, s.rect, dataUrlToBlob(s.dataUrl));
+        lastVersion = doc.headVersion;
+      }
+      // New form fields also reference head-version page numbers, so they go
+      // before the page ops too.
+      if (fieldPayload.length > 0) {
+        const doc = await addFormFields(docId, fieldPayload);
         lastVersion = doc.headVersion;
       }
       if (pageOps.length > 0) {
@@ -170,30 +211,87 @@ export function EditorScreen({ docId, navigate }: Props) {
 
   const save = useCallback(async () => {
     if (!dirty || viewing != null || saving) return;
+    const names = store.fields.map((f) => f.name.trim());
+    if (names.some((n) => n === '' || n.includes('.')) || new Set(names).size !== names.length) {
+      setPanel((p) => ({ ...p, collapsed: false, tab: 'forms' }));
+      push({
+        type: 'error',
+        title: 'Check new form fields',
+        msg: 'Every field needs a unique, non-empty name without dots.',
+      });
+      return;
+    }
+    if (hasIntactSignature) {
+      setConfirmSigSave(true);
+      return;
+    }
     if (doomedCount > 0) {
       setConfirmDiscard(true);
       return;
     }
     await doSave();
-  }, [dirty, viewing, saving, doomedCount, doSave]);
+  }, [dirty, viewing, saving, hasIntactSignature, doomedCount, doSave, store.fields, push]);
 
-  /* ---- in-place text edit (mupdf engine) ---- */
+  /** Continue the save after the signature-invalidation warning. */
+  const saveDespiteSignature = useCallback(() => {
+    setConfirmSigSave(false);
+    if (doomedCount > 0) {
+      setConfirmDiscard(true);
+      return;
+    }
+    void doSave();
+  }, [doomedCount, doSave]);
+
+  /* ---- in-place text/image edit (mupdf engine) ---- */
   const onContentEdited = useCallback(
-    async (bytes: Uint8Array) => {
+    async (bytes: Uint8Array, label = 'Text edit') => {
       // On failure the API client raises the error toast and the rejection
       // propagates to the edit overlay, which stays open for retry.
       const doc = await replaceContent(docId, bytes);
       invalidateDoc();
-      push({ type: 'success', title: `Text edit saved as v${doc.headVersion}` });
+      push({ type: 'success', title: `${label} saved as v${doc.headVersion}` });
     },
     [docId, invalidateDoc, push],
   );
 
   /* ---- sign tool ---- */
+  // Digital signing is an IMMEDIATE server-side operation (new version),
+  // unlike draw/image which join the pending-ops queue.
+  const signMut = useMutation({
+    mutationFn: (input: SignDocumentInput) => signDocument(docId, input),
+    onSuccess: (doc) => {
+      invalidateDoc();
+      push({
+        type: 'success',
+        title: `Digitally signed as v${doc.headVersion}`,
+        msg: 'Any later edit will invalidate the signature.',
+      });
+    },
+  });
+
   const applySignature = useCallback(
     (sig: SignaturePayload) => {
       if (!signing) return;
       const { at, vp, page } = signing;
+      if (sig.kind === 'digital') {
+        setSigning(null);
+        const input: SignDocumentInput = {
+          reason: sig.reason || undefined,
+          location: sig.location || undefined,
+        };
+        if (sig.visible) {
+          const rectVp = placementRect(
+            at,
+            viewportSize(vp),
+            DIGITAL_SIGN_ASPECT,
+            SIGN_DEFAULT_W * vp.scale,
+          );
+          input.page = page;
+          input.visibleRect = viewportRectToPdf(rectVp, vp);
+        }
+        signMut.mutate(input);
+        return;
+      }
       // Place in viewport space so the signature stays visually upright on
       // rotated pages, then convert to PDF points like all other annotations.
       const rectVp = placementRect(at, viewportSize(vp), sig.aspect, SIGN_DEFAULT_W * vp.scale);
@@ -214,8 +312,62 @@ export function EditorScreen({ docId, navigate }: Props) {
       }
       setSigning(null);
     },
-    [signing, store],
+    [signing, store, signMut],
   );
+
+  /* ---- form designer ---- */
+  const onAddField = useCallback(
+    (page: number, type: 'text' | 'checkbox', rect: PdfRect) => {
+      const taken = new Set<string>();
+      for (const f of formQuery.data ?? []) {
+        taken.add(f.id);
+        if (f.name) taken.add(f.name);
+      }
+      for (const f of store.fields) taken.add(f.name);
+      store.addField({ id: annUid(), type, name: nextFieldName(taken), page, rect });
+      setPanel((p) => ({ ...p, collapsed: false, tab: 'forms' }));
+    },
+    [formQuery.data, store],
+  );
+
+  /* ---- page structure (insert blank / append from doc) ----
+   * These are IMMEDIATE operations (direct API call + refetch, like restore):
+   * unlike rotate/delete/reorder they change page identity, so mixing them
+   * into the pending-ops queue would invalidate every queued head-version
+   * page number. The guard modal asks the user to save or discard pending
+   * changes first. */
+  const insertMut = useMutation({
+    mutationFn: (at: number) => insertBlankPages(docId, at),
+    onSuccess: (doc, at) => {
+      invalidateDoc();
+      push({ type: 'success', title: `Inserted blank page at p${at} (v${doc.headVersion})` });
+    },
+  });
+  const appendMut = useMutation({
+    mutationFn: (v: { sourceId: string; pages?: number[] }) =>
+      appendFromDocument(docId, v.sourceId, v.pages),
+    onSuccess: (doc) => {
+      setPageModal(null);
+      invalidateDoc();
+      push({ type: 'success', title: `Appended pages (v${doc.headVersion})` });
+    },
+  });
+
+  const onInsertAt = useCallback(
+    (at: number) => {
+      if (viewing != null || insertMut.isPending) return;
+      if (dirty) {
+        setPageModal('guard');
+        return;
+      }
+      insertMut.mutate(at);
+    },
+    [viewing, dirty, insertMut],
+  );
+  const onAppendFrom = useCallback(() => {
+    if (viewing != null) return;
+    setPageModal(dirty ? 'guard' : 'append');
+  }, [viewing, dirty]);
 
   /** Tool switch with sensible per-tool palette defaults (from the design). */
   const pickTool = useCallback(
@@ -356,6 +508,10 @@ export function EditorScreen({ docId, navigate }: Props) {
         else store.undo();
         return;
       }
+      if (e.key === 'Escape' && store.fieldDraft != null) {
+        store.setFieldDraft(null);
+        return;
+      }
       if (typing) return;
       const num = typeof store.zoom === 'number' ? store.zoom : 100;
       if (e.key === '=' || e.key === '+') {
@@ -458,6 +614,8 @@ export function EditorScreen({ docId, navigate }: Props) {
           onDelete={store.remove}
           onRestore={store.restore}
           onReorder={store.reorder}
+          onInsertAt={onInsertAt}
+          onAppendFrom={onAppendFrom}
           readonly={readonly}
         />
         {effPdf ? (
@@ -477,10 +635,14 @@ export function EditorScreen({ docId, navigate }: Props) {
             setAnnotStyle={store.setAnnotStyle}
             annots={readonly ? [] : store.annots}
             stamps={readonly ? [] : store.stamps}
+            fields={readonly ? [] : store.fields}
+            fieldDraft={readonly ? null : store.fieldDraft}
             onAddAnnot={store.addAnnot}
             onUpdateAnnot={(id, patch) => store.updateAnnot(id, patch)}
             onRemoveAnnot={store.removeAnnot}
             onRemoveStamp={store.removeStamp}
+            onAddField={onAddField}
+            onRemoveField={store.removeField}
             onSign={(page, at, vp) => setSigning({ page, at, vp })}
             onContentEdited={onContentEdited}
           />
@@ -506,6 +668,38 @@ export function EditorScreen({ docId, navigate }: Props) {
       </div>
       {signing && (
         <SignatureModal onApply={applySignature} onCancel={() => setSigning(null)} />
+      )}
+      {pageModal === 'guard' && (
+        <Modal
+          title="Unsaved changes"
+          confirmLabel="OK"
+          onConfirm={() => setPageModal(null)}
+          onCancel={() => setPageModal(null)}
+        >
+          Inserting or appending pages changes the page numbering, so it can't be combined with
+          your {pendingCount} pending {pendingCount === 1 ? 'change' : 'changes'}. Save or discard
+          them first, then try again.
+        </Modal>
+      )}
+      {pageModal === 'append' && (
+        <AppendModal
+          currentId={docId}
+          busy={appendMut.isPending}
+          onAppend={(sourceId, pages) => appendMut.mutate({ sourceId, pages })}
+          onCancel={() => setPageModal(null)}
+        />
+      )}
+      {confirmSigSave && (
+        <Modal
+          title="Invalidate digital signature?"
+          confirmLabel="Save anyway"
+          danger
+          onConfirm={saveDespiteSignature}
+          onCancel={() => setConfirmSigSave(false)}
+        >
+          Saving will invalidate the digital signature — the document changes, so the existing
+          signature no longer matches it. Continue?
+        </Modal>
       )}
       {confirmDiscard && (
         <Modal

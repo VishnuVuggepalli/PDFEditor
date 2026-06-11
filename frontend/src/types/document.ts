@@ -57,6 +57,33 @@ export interface NewFormFieldInput {
   default?: string;
 }
 
+/** One digital signature's validation report
+ * (GET /documents/{id}/signatures). */
+export interface SignatureInfo {
+  signer: string;
+  signedAt: string;
+  valid: boolean;
+  /** valid | invalid | unknown — unknown means the digest checks passed but
+   * the signer's certificate is not trusted ("unknown signer"). */
+  status: 'valid' | 'invalid' | 'unknown';
+  reason?: string;
+  coversWholeDocument: boolean;
+  visible: boolean;
+  page?: number;
+  location?: string;
+  signingReason?: string;
+  selfSigned: boolean;
+}
+
+/** POST /documents/{id}/sign request body. page and visibleRect must be
+ * provided together; rect is in PDF points with a lower-left origin. */
+export interface SignDocumentInput {
+  reason?: string;
+  location?: string;
+  page?: number;
+  visibleRect?: [number, number, number, number];
+}
+
 /** One inclusive 1-based page range for POST /documents/{id}/split. */
 export interface SplitRange {
   from: number;

@@ -9,6 +9,8 @@ import type {
   FormField,
   NewFormFieldInput,
   PageOp,
+  SignatureInfo,
+  SignDocumentInput,
   SplitRange,
   Version,
 } from '../types/document';
@@ -84,6 +86,18 @@ export function stampSignature(
     method: 'POST',
     body: form,
   });
+}
+
+/** Cryptographically sign the head version (invisible by default; pass page
+ * + visibleRect together for a visible signature widget). Creates a new
+ * version with ops summary "digitally signed". */
+export function signDocument(id: string, input: SignDocumentInput): Promise<DocumentRecord> {
+  return requestJSON<DocumentRecord>(`/documents/${encodeURIComponent(id)}/sign`, 'POST', input);
+}
+
+/** Validation status of all digital signatures in the head version. */
+export function getSignatures(id: string): Promise<SignatureInfo[]> {
+  return request<SignatureInfo[]>(`/documents/${encodeURIComponent(id)}/signatures`);
 }
 
 /** Combine 2+ documents (head versions, in order) into one new document. */
