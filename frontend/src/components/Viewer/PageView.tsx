@@ -169,6 +169,9 @@ export function PageView(props: Props) {
 
   async function onSelectClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!imageEditable || !vp || !canEditImages(pdf) || imageBusy) return;
+    // Part of a double-click (text edit gesture) or while a text edit is
+    // open: not an image-select gesture.
+    if (e.detail > 1 || editing) return;
     // A click that concludes a text-selection drag is not a select gesture.
     const docSel = window.getSelection();
     if (docSel && !docSel.isCollapsed) return;
