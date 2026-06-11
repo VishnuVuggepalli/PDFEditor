@@ -14,10 +14,17 @@ import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 
 const BASE = process.env.BASE_URL || 'http://localhost:5302';
+// Optional engine override (mupdf | pdfjs) via the app's ?engine= param.
+const Q = process.env.E2E_ENGINE ? `?engine=${process.env.E2E_ENGINE}` : '';
 const FIXTURE = new URL('../../backend/testdata/sample.pdf', import.meta.url).pathname;
 const SHOTS = process.env.SHOT_DIR || '/tmp/pdfeditor-e2e-forms';
 
 const step = (msg) => console.log(`✓ ${msg}`);
+// Unique per-run names so repeated runs against the same backend don't
+// produce ambiguous pickers/library cards.
+const RUN = Date.now().toString(36);
+const DOC_NAME = `e2e-forms-${RUN}.pdf`;
+const SRC_NAME = `e2e-append-src-${RUN}.pdf`;
 
 async function uploadViaApi(name, path) {
   const form = new FormData();
@@ -35,8 +42,8 @@ async function pageCountOf(docId) {
 }
 
 async function main() {
-  const docId = await uploadViaApi('e2e-forms.pdf', FIXTURE); // 2 pages
-  const srcId = await uploadViaApi('e2e-append-src.pdf', FIXTURE); // 2 pages
+  const docId = await uploadViaApi(DOC_NAME, FIXTURE); // 2 pages
+  await uploadViaApi(SRC_NAME, FIXTURE); // append source, 2 pages
 
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
@@ -47,7 +54,7 @@ async function main() {
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 
   /* ---- 1. form designer: draw a text field, save, fill, re-open ---- */
-  await page.goto(`${BASE}/#/doc/${docId}`);
+  await page.goto(`${BASE}/${Q}#/doc/${docId}`);
   await page.waitForSelector('.pdf-sheet canvas.pdf-canvas');
   await page.waitForTimeout(800);
 
@@ -84,9 +91,9 @@ async function main() {
   await page.waitForTimeout(1500);
 
   // re-open from scratch: value persisted
-  await page.goto(`${BASE}/#/`);
+  await page.goto(`${BASE}/${Q}#/`);
   await page.waitForSelector('.dropzone');
-  await page.locator('.doc-card', { hasText: 'e2e-forms.pdf' }).first().click();
+  await page.locator('.doc-card', { hasText: DOC_NAME }).first().click();
   await page.waitForSelector('.pdf-sheet canvas.pdf-canvas');
   await page.click('.rp-tab:has-text("Forms")');
   const reopened = page.locator('.form-field', { hasText: 'e2eApprover' }).locator('input');
@@ -116,7 +123,7 @@ async function main() {
   await page.locator('.psb-head button[aria-label="More"]').click();
   await page.locator('.menu .item', { hasText: 'Append from document' }).click();
   await page.waitForSelector('.append-list');
-  await page.locator('.append-doc', { hasText: 'e2e-append-src.pdf' }).click();
+  await page.locator('.append-doc', { hasText: SRC_NAME }).click();
   await page.fill('#append-pages-input', '1');
   await page.screenshot({ path: `${SHOTS}/04-append-modal.png` });
   await page.locator('.modal .btn.primary', { hasText: 'Append' }).click();
