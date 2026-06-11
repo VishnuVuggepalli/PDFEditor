@@ -37,6 +37,8 @@ func fail(c *gin.Context, err error) {
 		status, msg = http.StatusUnprocessableEntity, "file is not a valid PDF"
 	case errors.Is(err, document.ErrInvalidInput):
 		status, msg = http.StatusBadRequest, "invalid input"
+	case errors.Is(err, document.ErrSigningUnavailable):
+		status, msg = http.StatusServiceUnavailable, "digital signing is not available on this server"
 	}
 
 	slog.Error("request failed",

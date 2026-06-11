@@ -60,6 +60,8 @@ paginated lists).
 | `POST /api/v1/documents/{id}/split` | Extract page ranges into new documents (source untouched) |
 | `POST /api/v1/documents/{id}/annotations` | Persist highlights/notes/draw/shapes/text into the PDF |
 | `POST /api/v1/documents/{id}/stamp` | Place a visual signature image on one page (multipart: `image` PNG/JPEG ≤5 MB, `page`, `rect` JSON `[llx,lly,urx,ury]` in PDF points; fitted into rect, aspect preserved; ops summary `signature stamp pN`) |
+| `POST /api/v1/documents/{id}/sign` | Cryptographically sign the head version (JSON: `reason?`, `location?`, `page`+`visibleRect` together for a visible widget; invisible PKCS#7 detached signature by default; ops summary `digitally signed`) |
+| `GET  /api/v1/documents/{id}/signatures` | Validation status of all digital signatures in the head version (signer, time, `valid`/`invalid`/`unknown`, coversWholeDocument) |
 | `POST /api/v1/documents/{id}/form` | Fill AcroForm fields, optional flatten |
 | `GET  /api/v1/documents/{id}/versions` | List version history |
 | `GET  /api/v1/documents/{id}/versions/{n}` | Download a specific version (read-only) |
@@ -204,20 +206,41 @@ the pdf.js engine (Apache-2.0), which remains fully functional behind
 ## 10. Out of Scope (v1)
 
 - Authentication / multi-user accounts
-- Digital signatures (cryptographic)
 - OCR of scanned documents
 - Collaboration / sharing
 
-### Why cryptographic signing is deferred
+### Cryptographic signing (shipped post-v1)
 
-The Sign tool ships with two *visual* modes only: a drawn signature (stored
-as an ink annotation) and an uploaded signature image (stamped server-side
-via pdfcpu's image watermark API). Neither is a cryptographic signature.
-pdfcpu (our only PDF engine in v1) can **validate** existing digital
-signatures but cannot **create** them — producing a real PAdES/PKCS#7
-signature requires certificate management, a signing engine (e.g.
-digitorus/pdfsign or a mupdf-backed phase), trust-store decisions, and a
-UX for key material that is far beyond a personal editor's v1. The Sign
-menu shows a disabled "Certificates & digital signing" item so the gap is
-explicit rather than surprising; revisit when the engine swap (mupdf) or a
-dedicated signing library lands.
+Originally deferred because pdfcpu can **validate** digital signatures but
+cannot **create** them (true through v0.13.0 and even the v1.0.0-test
+pre-release; signature *creation* remains unreleased upstream). Now
+implemented with a two-library split:
+
+- **Signing**: `github.com/digitorus/pdfsign` (BSD-2-Clause, actively
+  maintained, PKCS#7 detached approval signatures as incremental updates,
+  optional visible widget). Confined to `backend/internal/sign` — the only
+  package allowed to import it, mirroring how `internal/pdf` confines
+  pdfcpu.
+- **Validation**: pdfcpu's `ValidateSignatures` (already a dependency;
+  thorough digest + certificate-chain checking), exposed through the
+  engine in `internal/pdf`.
+
+**Trust model (personal tool)**: on first use the backend generates an
+ECDSA P-256 key + self-signed X.509 certificate under `DATA_DIR/keys/`
+(0600, atomic writes). The certificate is registered in pdfcpu's in-process
+trust pool, so signatures made by this installation validate as **valid**
+locally; external viewers (Acrobat etc.) report an **unknown signer**, which
+the UI copy explains as expected for a self-signed identity. Users with a
+real certificate can set `SIGNING_CERT_FILE`/`SIGNING_KEY_FILE` (PEM; e.g.
+extracted from a PKCS#12 bundle with openssl — no P12 import UI).
+
+**Endpoints**: `POST /documents/{id}/sign` `{reason?, location?, page?+
+visibleRect?}` signs the head version into a new version ("digitally
+signed"); `GET /documents/{id}/signatures` reports per-signature status
+(`valid` / `invalid` / `unknown`), signer, time, and whether the signature
+covers the whole document (ByteRange vs EOF).
+
+**Invariant**: any subsequent edit (annotation, page op, content replace)
+rewrites the file and invalidates signatures. The editor warns on Save when
+the head version carries an intact signature, and the Info tab shows
+validation badges.

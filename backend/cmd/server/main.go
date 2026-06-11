@@ -17,6 +17,7 @@ import (
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/document"
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/pdf"
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/raster"
+	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/sign"
 	"github.com/VishnuVuggepalli/PDFEditor/backend/internal/store"
 )
 
@@ -36,7 +37,23 @@ func buildServer(cfg config.Config) (*http.Server, error) {
 		return nil, err
 	}
 
-	svc := document.NewService(st, pdf.NewEngine())
+	eng := pdf.NewEngine()
+	svc := document.NewService(st, eng)
+
+	// Digital signing identity: env-provided PEM files, or a self-signed
+	// per-installation identity generated under {dataDir}/keys on first use.
+	identity, err := loadSigningIdentity(cfg)
+	if err != nil {
+		return nil, err
+	}
+	// Trust our own certificate so signatures made here validate as
+	// "valid" locally. Must happen before the server starts serving.
+	if err := eng.TrustCert(identity.Cert); err != nil {
+		return nil, err
+	}
+	svc.SetSigning(sign.New(identity), eng)
+	slog.Info("signing identity ready", "signer", identity.Name())
+
 	h := api.NewHandlers(svc, cfg.MaxUploadBytes())
 	// Thumbnail cache lives inside each document's dir: {dataDir}/documents/{id}/thumbs.
 	h.SetThumbs(document.NewThumbService(svc, raster.New(), filepath.Join(cfg.DataDir, "documents")))
@@ -51,6 +68,16 @@ func buildServer(cfg config.Config) (*http.Server, error) {
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}, nil
+}
+
+// loadSigningIdentity returns the identity from SIGNING_CERT_FILE /
+// SIGNING_KEY_FILE when configured, else the (possibly freshly generated)
+// per-installation identity in {dataDir}/keys.
+func loadSigningIdentity(cfg config.Config) (*sign.Identity, error) {
+	if cfg.SigningCertFile != "" {
+		return sign.LoadIdentity(cfg.SigningCertFile, cfg.SigningKeyFile)
+	}
+	return sign.LoadOrCreateIdentity(filepath.Join(cfg.DataDir, "keys"))
 }
 
 func run() error {

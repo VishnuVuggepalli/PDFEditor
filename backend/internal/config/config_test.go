@@ -105,3 +105,30 @@ func TestLoadMaxVersionsPerDoc(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadSigningFiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		cert    string
+		key     string
+		wantErr bool
+	}{
+		{"both unset", "", "", false},
+		{"both set", "/tmp/c.pem", "/tmp/k.pem", false},
+		{"cert only", "/tmp/c.pem", "", true},
+		{"key only", "", "/tmp/k.pem", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SIGNING_CERT_FILE", tt.cert)
+			t.Setenv("SIGNING_KEY_FILE", tt.key)
+			cfg, err := Load()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load err = %v, wantErr %t", err, tt.wantErr)
+			}
+			if err == nil && (cfg.SigningCertFile != tt.cert || cfg.SigningKeyFile != tt.key) {
+				t.Errorf("got %q/%q, want %q/%q", cfg.SigningCertFile, cfg.SigningKeyFile, tt.cert, tt.key)
+			}
+		})
+	}
+}

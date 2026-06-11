@@ -23,6 +23,13 @@ type Config struct {
 	MaxUploadMB       int64    // MAX_UPLOAD_MB, default 50
 	MaxVersionsPerDoc int      // MAX_VERSIONS_PER_DOC, default 20; 0 = unlimited
 	AllowedOrigins    []string // ALLOWED_ORIGINS, comma-separated CORS allowlist
+
+	// SIGNING_CERT_FILE / SIGNING_KEY_FILE point at PEM files for users
+	// with a real signing certificate. Both must be set together; when
+	// unset, a self-signed per-installation identity is generated under
+	// DATA_DIR/keys on first use.
+	SigningCertFile string
+	SigningKeyFile  string
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -47,6 +54,11 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid MAX_VERSIONS_PER_DOC %q (want integer >= 0; 0 = unlimited)", v)
 		}
 		cfg.MaxVersionsPerDoc = n
+	}
+	cfg.SigningCertFile = os.Getenv("SIGNING_CERT_FILE")
+	cfg.SigningKeyFile = os.Getenv("SIGNING_KEY_FILE")
+	if (cfg.SigningCertFile == "") != (cfg.SigningKeyFile == "") {
+		return Config{}, fmt.Errorf("SIGNING_CERT_FILE and SIGNING_KEY_FILE must be set together")
 	}
 	return cfg, nil
 }
