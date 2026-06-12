@@ -30,22 +30,53 @@ func parseHexColor(s string) (*color.SimpleColor, error) {
 	}, nil
 }
 
-// freeTextRenderer wraps a FreeTextAnnotation to write a complete /DA
-// (font + size + color). pdfcpu v0.13's FreeText RenderDict emits only the
-// color operator (the Tf part is an upstream TODO), which leaves viewers
-// without a usable default appearance.
-type freeTextRenderer struct {
-	model.FreeTextAnnotation
-	da string
+// baseFontNames maps domain font tokens to PDF base-14 font names. The full
+// name goes into BOTH the annotation fontName and /DA: the bundled mupdf
+// resolves full base-14 names from /DA directly (only five classic alias
+// tokens like /Helv exist, with no bold/italic variants).
+var baseFontNames = map[string]string{
+	"":                     "Helvetica",
+	"helvetica":            "Helvetica",
+	"helvetica-bold":       "Helvetica-Bold",
+	"helvetica-italic":     "Helvetica-Oblique",
+	"helvetica-bolditalic": "Helvetica-BoldOblique",
+	"times":                "Times-Roman",
+	"times-bold":           "Times-Bold",
+	"times-italic":         "Times-Italic",
+	"times-bolditalic":     "Times-BoldItalic",
+	"courier":              "Courier",
+	"courier-bold":         "Courier-Bold",
+	"courier-italic":       "Courier-Oblique",
+	"courier-bolditalic":   "Courier-BoldOblique",
 }
 
-// RenderDict renders the wrapped annotation, then replaces /DA.
+// freeTextRenderer wraps a FreeTextAnnotation to write a complete /DA
+// (font + size + color) and an explicit border. pdfcpu v0.13's FreeText
+// RenderDict emits only the color operator in /DA (the Tf part is an
+// upstream TODO) and omits /BS entirely when the border width is 0 — which
+// makes viewers fall back to the PDF-spec default border ([0 0 1], 1pt,
+// stroked in the /DA color). Probed against the bundled mupdf 1.27:
+// /BS << /W 0 >> suppresses the border; /C fills the background.
+type freeTextRenderer struct {
+	model.FreeTextAnnotation
+	da          string
+	borderWidth float64
+}
+
+// RenderDict renders the wrapped annotation, then replaces /DA and makes the
+// border explicit (zero-width included) so no viewer applies spec defaults.
 func (r freeTextRenderer) RenderDict(xRefTable *model.XRefTable, pageIndRef *types.IndirectRef) (types.Dict, error) {
 	d, err := r.FreeTextAnnotation.RenderDict(xRefTable, pageIndRef)
 	if err != nil {
 		return nil, err
 	}
 	d["DA"] = types.StringLiteral(r.da)
+	d["BS"] = types.Dict{
+		"Type": types.Name("Border"),
+		"W":    types.Float(r.borderWidth),
+		"S":    types.Name("S"),
+	}
+	delete(d, "Border")
 	return d, nil
 }
 
@@ -68,16 +99,20 @@ func freeText(a document.Annotation, fontCol *color.SimpleColor, ca *float64, re
 		}
 		bg = c
 	}
+	fontName, ok := baseFontNames[a.Font]
+	if !ok {
+		return nil, fmt.Errorf("unknown font token %q", a.Font)
+	}
 	ft := model.NewFreeTextAnnotation(
 		*rect, 0, a.Contents, "", "", 0, bg,
 		"", nil, ca, "", "",
-		a.Contents, types.AlignLeft, "Helvetica", a.FontSize, fontCol,
+		a.Contents, types.AlignLeft, fontName, a.FontSize, fontCol,
 		"", nil, nil, nil,
 		0, 0, 0, 0,
 		a.BorderWidth, model.BSSolid, false, 0)
-	da := fmt.Sprintf("/Helv %d Tf %.4f %.4f %.4f rg",
-		a.FontSize, fontCol.R, fontCol.G, fontCol.B)
-	return freeTextRenderer{FreeTextAnnotation: ft, da: da}, nil
+	da := fmt.Sprintf("/%s %d Tf %.4f %.4f %.4f rg",
+		fontName, a.FontSize, fontCol.R, fontCol.G, fontCol.B)
+	return freeTextRenderer{FreeTextAnnotation: ft, da: da, borderWidth: a.BorderWidth}, nil
 }
 
 // renderer builds the pdfcpu annotation for one domain annotation.

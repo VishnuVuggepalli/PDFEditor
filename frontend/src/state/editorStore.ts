@@ -40,12 +40,29 @@ interface Snapshot {
 /** Form-designer placement mode: which field type the next drawn rect creates. */
 export type FieldDraftType = 'text' | 'checkbox' | null;
 
+/** Core-14 font family for the text tool. */
+export type FontFamily = 'helvetica' | 'times' | 'courier';
+
 export interface AnnotStyle {
   readonly color: string;
   readonly width: number;
   readonly shape: ShapeKind;
   /** text tool font size in PDF points */
   readonly fontSize: number;
+  /** text tool font family (core-14, no embedding needed) */
+  readonly fontFamily: FontFamily;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  /** text tool border width in points; 0 = none */
+  readonly textBorder: 0 | 1 | 2;
+  /** text tool background fill; null = transparent */
+  readonly textBg: string | null;
+}
+
+/** Compose the backend core-14 font token from family + style toggles. */
+export function composeFontToken(family: FontFamily, bold: boolean, italic: boolean): string {
+  const suffix = bold && italic ? '-bolditalic' : bold ? '-bold' : italic ? '-italic' : '';
+  return family + suffix;
 }
 
 export interface EditorState {
@@ -133,6 +150,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
       width: 4,
       shape: 'square',
       fontSize: FONT_SIZE_DEFAULT,
+      fontFamily: 'helvetica',
+      bold: false,
+      italic: false,
+      textBorder: 0,
+      textBg: null,
     },
 
     init(docId, pageCount) {

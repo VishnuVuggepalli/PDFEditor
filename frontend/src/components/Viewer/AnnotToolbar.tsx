@@ -104,6 +104,67 @@ export function AnnotToolbar({ tool, style, setStyle }: Props) {
               </button>
             ))}
           </div>
+          <span className="ab-sep"></span>
+          <select
+            className="ab-select"
+            value={style.fontFamily}
+            onChange={(e) => setStyle({ fontFamily: e.target.value as AnnotStyle['fontFamily'] })}
+            aria-label="font family"
+          >
+            <option value="helvetica">Helvetica</option>
+            <option value="times">Times</option>
+            <option value="courier">Courier</option>
+          </select>
+          <div className="ab-widths">
+            <button
+              className={'ab-w' + (style.bold ? ' on' : '')}
+              onClick={() => setStyle({ bold: !style.bold })}
+              aria-label="bold"
+            >
+              <span style={{ color: '#fff', fontWeight: 800, fontSize: 13 }}>B</span>
+            </button>
+            <button
+              className={'ab-w' + (style.italic ? ' on' : '')}
+              onClick={() => setStyle({ italic: !style.italic })}
+              aria-label="italic"
+            >
+              <span style={{ color: '#fff', fontStyle: 'italic', fontSize: 13, fontWeight: 600 }}>I</span>
+            </button>
+          </div>
+          <span className="ab-sep"></span>
+          <div className="ab-widths" title="border width">
+            {([0, 1, 2] as const).map((w) => (
+              <button
+                key={w}
+                className={'ab-w' + (style.textBorder === w ? ' on' : '')}
+                onClick={() => setStyle({ textBorder: w })}
+                aria-label={w === 0 ? 'no border' : `border ${w}pt`}
+              >
+                <span
+                  style={{
+                    width: 12, height: 12, display: 'inline-block', borderRadius: 2,
+                    border: w === 0 ? '1px dashed rgba(255,255,255,.45)' : `${w}px solid #fff`,
+                  }}
+                ></span>
+              </button>
+            ))}
+          </div>
+          <div className="ab-swatches" title="background">
+            <button
+              className={'ab-sw ab-sw-none' + (style.textBg === null ? ' on' : '')}
+              onClick={() => setStyle({ textBg: null })}
+              aria-label="no background"
+            />
+            {['#ffffff', '#fff8c5', '#e7f0fe'].map((c) => (
+              <button
+                key={c}
+                className={'ab-sw' + (style.textBg === c ? ' on' : '')}
+                style={{ background: c }}
+                onClick={() => setStyle({ textBg: c })}
+                aria-label={`background ${c}`}
+              />
+            ))}
+          </div>
         </>
       )}
     </div>

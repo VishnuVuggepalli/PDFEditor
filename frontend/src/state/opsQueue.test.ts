@@ -311,3 +311,25 @@ describe('form designer queue', () => {
     });
   });
 });
+
+describe('text annotation font token', () => {
+  it('threads the font token into the wire format', () => {
+    const annots: PendingAnnotation[] = [
+      {
+        id: 't1', type: 'text', page: 1, rect: [10, 700, 200, 730],
+        color: '#111827', contents: 'styled', fontSize: 14, font: 'times-bolditalic',
+      },
+    ];
+    expect(toAnnotationInputs(annots)[0].font).toBe('times-bolditalic');
+  });
+
+  it('omits font when unset (backend defaults to helvetica)', () => {
+    const annots: PendingAnnotation[] = [
+      {
+        id: 't1', type: 'text', page: 1, rect: [10, 700, 200, 730],
+        color: '#111827', contents: 'plain', fontSize: 14,
+      },
+    ];
+    expect('font' in toAnnotationInputs(annots)[0]).toBe(false);
+  });
+});

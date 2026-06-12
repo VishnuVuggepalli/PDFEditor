@@ -35,6 +35,8 @@ export interface PendingAnnotation {
   readonly paths?: ReadonlyArray<ReadonlyArray<number>>;
   /** text only: font size in PDF points */
   readonly fontSize?: number;
+  /** text only: core-14 font token composed from family + bold/italic */
+  readonly font?: string;
   /** text only: optional background color */
   readonly bg?: string;
   /** text/square/circle/line: stroke width */
@@ -214,6 +216,7 @@ export function toAnnotationInputs(
       if (a.opacity !== undefined) out.opacity = a.opacity;
       if (a.paths) out.paths = a.paths.map((p) => [...p]);
       if (a.fontSize !== undefined) out.fontSize = Math.round(a.fontSize);
+      if (a.font) out.font = a.font;
       if (a.bg) out.bg = a.bg;
       if (a.borderWidth !== undefined) out.borderWidth = a.borderWidth;
       if (a.line) out.line = [...a.line];

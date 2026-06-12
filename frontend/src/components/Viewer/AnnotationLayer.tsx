@@ -12,6 +12,7 @@ import {
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import type { PendingAnnotation, PendingFormField, PendingStamp } from '../../state/opsQueue';
 import type { AnnotStyle, FieldDraftType, Tool } from '../../state/editorStore';
+import { composeFontToken } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
 import { NotePins } from './NotePins';
 import { TextBox } from './TextBox';
@@ -105,6 +106,9 @@ export function AnnotationLayer(props: Props) {
       onAdd({
         id, type: 'text', page: pageOrigN, rect,
         color: style.color, contents: '', fontSize: style.fontSize,
+        font: composeFontToken(style.fontFamily, style.bold, style.italic),
+        ...(style.textBorder > 0 ? { borderWidth: style.textBorder } : {}),
+        ...(style.textBg ? { bg: style.textBg } : {}),
       });
       setEditText(id);
       return;

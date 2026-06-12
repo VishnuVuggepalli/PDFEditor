@@ -451,3 +451,9 @@ mark.hl.active { background: #f59e0b; box-shadow: 0 0 0 2px #f59e0b; }
   border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text);
 }
 .append-pages.invalid input { border-color: var(--danger); }
+
+/* text tool: font family dropdown + no-background swatch */
+.annot-bar .ab-select { height: 24px; border-radius: 6px; border: 0; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; padding: 0 6px; }
+.annot-bar .ab-select option { color: #111; }
+.annot-bar .ab-sw-none { background: transparent; position: relative; }
+.annot-bar .ab-sw-none::after { content: ''; position: absolute; left: 2px; right: 2px; top: 50%; height: 1.5px; background: #e55; transform: rotate(-45deg); }

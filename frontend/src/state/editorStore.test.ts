@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useEditorStore } from './editorStore';
+import { composeFontToken, useEditorStore } from './editorStore';
 
 const store = () => useEditorStore.getState();
 
@@ -143,5 +143,16 @@ describe('form designer state', () => {
     useEditorStore.getState().addField(field);
     useEditorStore.getState().init('doc-2', 2);
     expect(useEditorStore.getState().fields).toHaveLength(0);
+  });
+});
+
+describe('composeFontToken', () => {
+  it.each([
+    ['helvetica', false, false, 'helvetica'],
+    ['helvetica', true, false, 'helvetica-bold'],
+    ['times', false, true, 'times-italic'],
+    ['courier', true, true, 'courier-bolditalic'],
+  ] as const)('%s bold=%s italic=%s -> %s', (family, bold, italic, want) => {
+    expect(composeFontToken(family, bold, italic)).toBe(want);
   });
 });

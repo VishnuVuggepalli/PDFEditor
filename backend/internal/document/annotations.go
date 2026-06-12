@@ -39,12 +39,21 @@ type Annotation struct {
 	Paths    [][]float64 `json:"paths,omitempty"`    // ink only: strokes of flat x,y pairs
 
 	FontSize    int       `json:"fontSize,omitempty"`    // text only: 8..72 points
+	Font        string    `json:"font,omitempty"`        // text only: core-14 token, see fontTokens; empty = helvetica
 	Bg          string    `json:"bg,omitempty"`          // text only: optional "#RRGGBB" background
 	BorderWidth float64   `json:"borderWidth,omitempty"` // text/square/circle/line: stroke width, 0 = default
 	Line        []float64 `json:"line,omitempty"`        // line only: [x1,y1,x2,y2] endpoints
 }
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// fontTokens is the whitelist for Annotation.Font: the core-14 PDF fonts,
+// which every viewer renders without font embedding.
+var fontTokens = map[string]bool{
+	"helvetica": true, "helvetica-bold": true, "helvetica-italic": true, "helvetica-bolditalic": true,
+	"times": true, "times-bold": true, "times-italic": true, "times-bolditalic": true,
+	"courier": true, "courier-bold": true, "courier-italic": true, "courier-bolditalic": true,
+}
 
 // validateAnnotation checks one annotation against the document's page count.
 func validateAnnotation(a Annotation, pageCount int) error {
@@ -93,6 +102,9 @@ func validateAnnotationByType(a Annotation) error {
 		}
 		if a.Bg != "" && !hexColor.MatchString(a.Bg) {
 			return fmt.Errorf("%w: bg must be #RRGGBB, got %q", ErrInvalidInput, a.Bg)
+		}
+		if a.Font != "" && !fontTokens[a.Font] {
+			return fmt.Errorf("%w: unknown font %q (core-14 tokens only)", ErrInvalidInput, a.Font)
 		}
 
 	case AnnLine:

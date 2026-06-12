@@ -6,6 +6,7 @@ import { pdfRectToViewport } from '../../pdf/coords';
 import type { ViewportParams } from '../../pdf/coords';
 import type { PendingAnnotation } from '../../state/opsQueue';
 import { Icon } from '../shared/Icon';
+import { fontTokenToCss } from './textFonts';
 
 const FONT_SIZE_FALLBACK = 14;
 
@@ -35,6 +36,7 @@ export function TextBox({ a, vp, readonly, autoFocus, onCommit, onRemove }: Prop
 
   const r = pdfRectToViewport(a.rect, vp);
   const fontPx = (a.fontSize ?? FONT_SIZE_FALLBACK) * vp.scale;
+  const css = fontTokenToCss(a.font);
 
   function blur() {
     const el = editRef.current;
@@ -50,7 +52,16 @@ export function TextBox({ a, vp, readonly, autoFocus, onCommit, onRemove }: Prop
   return (
     <div
       className="an-text"
-      style={{ left: r.x, top: r.y, fontSize: Math.max(6, Math.round(fontPx)), color: a.color }}
+      style={{
+        left: r.x, top: r.y,
+        fontSize: Math.max(6, Math.round(fontPx)),
+        color: a.color,
+        fontFamily: css.fontFamily,
+        fontWeight: css.fontWeight,
+        fontStyle: css.fontStyle,
+        background: a.bg ?? undefined,
+        outline: a.borderWidth ? `${a.borderWidth}px solid ${a.color}` : undefined,
+      }}
     >
       <div
         ref={editRef}

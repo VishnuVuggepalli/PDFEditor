@@ -82,6 +82,29 @@ func TestAnnotateValidation(t *testing.T) {
 			a.FontSize = 12
 			a.Bg = "white"
 		}), true},
+		{"text valid font times-bold", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 12
+			a.Font = "times-bold"
+		}), false},
+		{"text valid font courier-bolditalic", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 12
+			a.Font = "courier-bolditalic"
+		}), false},
+		{"text empty font defaults", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 12
+		}), false},
+		{"text unknown font", mod(func(a *Annotation) {
+			a.Type = AnnText
+			a.Contents = "x"
+			a.FontSize = 12
+			a.Font = "comic-sans"
+		}), true},
 		{"valid circle", mod(func(a *Annotation) { a.Type = AnnCircle; a.BorderWidth = 2 }), false},
 		{"circle border too wide", mod(func(a *Annotation) {
 			a.Type = AnnCircle

@@ -118,6 +118,8 @@ export interface AnnotationInput {
   paths?: number[][];
   /** text only: font size in PDF points (backend whitelist 8..72) */
   fontSize?: number;
+  /** text only: core-14 font token, e.g. "times-bold"; empty = helvetica */
+  font?: string;
   /** text only: optional background color */
   bg?: string;
   /** text/square/circle/line: stroke width in points */
