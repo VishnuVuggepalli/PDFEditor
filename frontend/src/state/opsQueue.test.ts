@@ -11,6 +11,7 @@ import {
   reorderPages,
   restorePage,
   rotatePage,
+  shiftAnnotPatch,
   toAnnotationInputs,
   toNewFormFieldInputs,
 } from './opsQueue';
@@ -331,5 +332,42 @@ describe('text annotation font token', () => {
       },
     ];
     expect('font' in toAnnotationInputs(annots)[0]).toBe(false);
+  });
+});
+
+describe('shiftAnnotPatch', () => {
+  it('shifts the rect', () => {
+    const a: PendingAnnotation = {
+      id: 'h1', type: 'highlight', page: 1, rect: [10, 20, 110, 50], color: '#fde047',
+    };
+    expect(shiftAnnotPatch(a, 5, -8).rect).toEqual([15, 12, 115, 42]);
+  });
+
+  it('shifts ink paths with the rect', () => {
+    const a: PendingAnnotation = {
+      id: 'i1', type: 'ink', page: 1, rect: [0, 0, 100, 100], color: '#00aa00',
+      paths: [[10, 20, 30, 40], [50, 60]],
+    };
+    const p = shiftAnnotPatch(a, 1, 2);
+    expect(p.paths).toEqual([[11, 22, 31, 42], [51, 62]]);
+  });
+
+  it('shifts line endpoints with the rect', () => {
+    const a: PendingAnnotation = {
+      id: 'l1', type: 'line', page: 1, rect: [0, 0, 100, 40], color: '#16a34a',
+      line: [10, 10, 90, 30],
+    };
+    const p = shiftAnnotPatch(a, -10, 5);
+    expect(p.line).toEqual([0, 15, 80, 35]);
+    expect(p.rect).toEqual([-10, 5, 90, 45]);
+  });
+
+  it('omits paths/line for rect-only annotations', () => {
+    const a: PendingAnnotation = {
+      id: 't1', type: 'text', page: 1, rect: [0, 0, 10, 10], color: '#111827', contents: 'x', fontSize: 14,
+    };
+    const p = shiftAnnotPatch(a, 1, 1);
+    expect('paths' in p).toBe(false);
+    expect('line' in p).toBe(false);
   });
 });

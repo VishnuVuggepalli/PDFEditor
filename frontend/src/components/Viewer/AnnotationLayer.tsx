@@ -11,6 +11,7 @@ import {
 } from '../../pdf/coords';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import type { PendingAnnotation, PendingFormField, PendingStamp } from '../../state/opsQueue';
+import { shiftAnnotPatch } from '../../state/opsQueue';
 import type { AnnotStyle, FieldDraftType, Tool } from '../../state/editorStore';
 import { composeFontToken } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
@@ -50,7 +51,7 @@ interface Props {
   style: AnnotStyle;
   readonly: boolean;
   onAdd: (a: PendingAnnotation) => void;
-  onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
+  onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect; paths?: number[][]; line?: number[] }) => void;
   onRemove: (id: string) => void;
   onRemoveStamp: (id: string) => void;
   /** form designer: rect drawn for a new field, in PDF points */
@@ -69,10 +70,50 @@ export function AnnotationLayer(props: Props) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [openNote, setOpenNote] = useState<string | null>(null);
   const [editText, setEditText] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ id: string; sx: number; sy: number; dx: number; dy: number } | null>(null);
 
   const drawTools: Tool[] = ['highlight', 'comment', 'draw', 'shapes', 'text', 'sign'];
   const placingField = tool === 'forms' && fieldDraft != null;
   const active = !readonly && (drawTools.includes(tool) || placingField);
+  // With the Select tool, pending annotations can be dragged to reposition.
+  const canDrag = !readonly && tool === 'select';
+
+  /** Class suffix for draggable pending annotations. */
+  const dragClass = canDrag ? ' an-drag' : '';
+
+  /** Live translate offset while a is being dragged. */
+  function dragOffset(id: string): React.CSSProperties {
+    return drag?.id === id ? { transform: `translate(${drag.dx}px, ${drag.dy}px)` } : {};
+  }
+
+  /** Pointer handlers turning an element into a drag-to-move handle for a. */
+  function dragHandlers(a: PendingAnnotation) {
+    if (!canDrag) return {};
+    return {
+      // No preventDefault on pointerdown: it would suppress the compat click
+      // events that open note popovers / delete buttons. A 3px threshold on
+      // pointerup distinguishes a click from a real drag instead.
+      onPointerDown: (e: React.PointerEvent) => {
+        if (e.button !== 0 || (e.target as HTMLElement).closest('.an-x')) return;
+        e.stopPropagation();
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        setDrag({ id: a.id, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 });
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        setDrag((d) => (d && d.id === a.id ? { ...d, dx: e.clientX - d.sx, dy: e.clientY - d.sy } : d));
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+        setDrag((d) => {
+          if (d && d.id === a.id && (Math.abs(d.dx) > 3 || Math.abs(d.dy) > 3)) {
+            // viewport px → PDF points: x same sign, y inverted (PDF y-up)
+            onUpdate(a.id, shiftAnnotPatch(a, d.dx / vp.scale, -d.dy / vp.scale));
+          }
+          return null;
+        });
+      },
+    };
+  }
 
   function rel(e: React.MouseEvent): [number, number] {
     const el = ref.current;
@@ -245,8 +286,9 @@ export function AnnotationLayer(props: Props) {
           return (
             <div
               key={a.id}
-              className="an-hl"
-              style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: a.color }}
+              className={'an-hl' + dragClass}
+              style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: a.color, ...dragOffset(a.id) }}
+              {...dragHandlers(a)}
             >
               {!readonly && (
                 <button className="an-x" onClick={() => onRemove(a.id)}>
@@ -262,11 +304,13 @@ export function AnnotationLayer(props: Props) {
             return (
               <div
                 key={a.id}
-                className={`an-shape ${cls}`}
+                className={`an-shape ${cls}${dragClass}`}
                 style={{
                   left: r.x, top: r.y, width: r.w, height: r.h,
                   borderColor: a.color, borderWidth: a.borderWidth ?? 2,
+                  ...dragOffset(a.id),
                 }}
+                {...dragHandlers(a)}
               >
                 {!readonly && (
                   <button className="an-x" onClick={() => onRemove(a.id)}>
@@ -311,12 +355,15 @@ export function AnnotationLayer(props: Props) {
           {byType('ink').map((a) => (
             <path
               key={a.id}
+              className={dragClass.trim()}
               d={(a.paths ?? []).map((p) => toSvgPath(pdfPathToViewport(p, vp))).join(' ')}
               stroke={a.color}
               strokeWidth={2.4}
               fill="none"
               strokeLinecap="round"
               strokeLinejoin="round"
+              style={dragOffset(a.id)}
+              {...dragHandlers(a)}
             />
           ))}
           {byType('line').map((a) => {
@@ -324,10 +371,13 @@ export function AnnotationLayer(props: Props) {
             return (
               <line
                 key={a.id}
+                className={dragClass.trim()}
                 x1={x1} y1={y1} x2={x2} y2={y2}
                 stroke={a.color}
                 strokeWidth={(a.borderWidth ?? 2) * vp.scale}
                 strokeLinecap="round"
+                style={dragOffset(a.id)}
+                {...dragHandlers(a)}
               />
             );
           })}
@@ -397,6 +447,8 @@ export function AnnotationLayer(props: Props) {
               onRemove(id);
               if (editText === id) setEditText(null);
             }}
+            dragHandlers={canDrag ? dragHandlers(a) : undefined}
+            dragOffset={dragOffset(a.id)}
           />
         ))}
         <NotePins
@@ -407,6 +459,8 @@ export function AnnotationLayer(props: Props) {
           setOpenNote={setOpenNote}
           onUpdate={onUpdate}
           onRemove={onRemove}
+          dragHandlers={canDrag ? dragHandlers : undefined}
+          dragOffset={dragOffset}
         />
       </div>
 

@@ -97,7 +97,7 @@ export interface EditorState {
   addAnnot(a: PendingAnnotation): void;
   updateAnnot(
     id: string,
-    patch: Partial<Pick<PendingAnnotation, 'contents' | 'color' | 'rect'>>,
+    patch: Partial<Pick<PendingAnnotation, 'contents' | 'color' | 'rect' | 'paths' | 'line'>>,
   ): void;
   removeAnnot(id: string): void;
 

@@ -13,9 +13,14 @@ interface Props {
   setOpenNote: (id: string | null) => void;
   onUpdate: (id: string, patch: { contents?: string }) => void;
   onRemove: (id: string) => void;
+  /** present while the Select tool is active: pins become drag-to-move */
+  dragHandlers?: (a: PendingAnnotation) => React.DOMAttributes<HTMLElement>;
+  dragOffset?: (id: string) => React.CSSProperties;
 }
 
-export function NotePins({ notes, vp, readonly, openNote, setOpenNote, onUpdate, onRemove }: Props) {
+export function NotePins({
+  notes, vp, readonly, openNote, setOpenNote, onUpdate, onRemove, dragHandlers, dragOffset,
+}: Props) {
   // Editor text, keyed by the note it belongs to; re-seeded during render
   // when a different note is opened (React's "adjust state on prop change"
   // pattern — avoids an extra effect pass).
@@ -32,7 +37,12 @@ export function NotePins({ notes, vp, readonly, openNote, setOpenNote, onUpdate,
         const r = pdfRectToViewport(a.rect, vp);
         const open = openNote === a.id;
         return (
-          <div key={a.id} className="cm-pin" style={{ left: r.x + r.w / 2, top: r.y + r.h / 2 }}>
+          <div
+            key={a.id}
+            className={'cm-pin' + (dragHandlers ? ' an-drag' : '')}
+            style={{ left: r.x + r.w / 2, top: r.y + r.h / 2, ...dragOffset?.(a.id) }}
+            {...dragHandlers?.(a)}
+          >
             <button
               className={'cm-dot' + (open ? ' open' : '')}
               onClick={(e) => {

@@ -32,7 +32,7 @@ interface Props {
   /** non-null while the forms tool is placing a new field */
   fieldDraft: FieldDraftType;
   onAdd: (a: PendingAnnotation) => void;
-  onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect }) => void;
+  onUpdate: (id: string, patch: { contents?: string; rect?: PdfRect; paths?: number[][]; line?: number[] }) => void;
   onRemove: (id: string) => void;
   onRemoveStamp: (id: string) => void;
   /** form designer: rect drawn on this page (head-version numbering) */

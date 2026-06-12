@@ -18,9 +18,12 @@ interface Props {
   /** commit edited text + measured size (viewport px) */
   onCommit: (id: string, contents: string, size: { w: number; h: number }) => void;
   onRemove: (id: string) => void;
+  /** present while the Select tool is active: shows a move grip */
+  dragHandlers?: React.DOMAttributes<HTMLElement>;
+  dragOffset?: React.CSSProperties;
 }
 
-export function TextBox({ a, vp, readonly, autoFocus, onCommit, onRemove }: Props) {
+export function TextBox({ a, vp, readonly, autoFocus, onCommit, onRemove, dragHandlers, dragOffset }: Props) {
   const editRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +64,7 @@ export function TextBox({ a, vp, readonly, autoFocus, onCommit, onRemove }: Prop
         fontStyle: css.fontStyle,
         background: a.bg ?? undefined,
         outline: a.borderWidth ? `${a.borderWidth}px solid ${a.color}` : undefined,
+        ...dragOffset,
       }}
     >
       <div
@@ -88,6 +92,11 @@ export function TextBox({ a, vp, readonly, autoFocus, onCommit, onRemove }: Prop
         >
           <Icon name="close" size={11} />
         </button>
+      )}
+      {dragHandlers && (
+        <span className="an-grip" aria-label="Move text" {...dragHandlers}>
+          <Icon name="move" size={11} />
+        </span>
       )}
     </div>
   );

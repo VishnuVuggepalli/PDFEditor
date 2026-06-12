@@ -239,3 +239,24 @@ export function toNewFormFieldInputs(
     return out;
   });
 }
+
+/** Patch for moving a pending annotation by (dx, dy) in PDF points: shifts
+ * the rect plus any coordinate payloads (ink strokes, line endpoints) so the
+ * whole annotation translates as one unit. */
+export function shiftAnnotPatch(
+  a: PendingAnnotation,
+  dx: number,
+  dy: number,
+): { rect: PdfRect; paths?: number[][]; line?: number[] } {
+  const [llx, lly, urx, ury] = a.rect;
+  const out: { rect: PdfRect; paths?: number[][]; line?: number[] } = {
+    rect: [llx + dx, lly + dy, urx + dx, ury + dy],
+  };
+  if (a.paths) {
+    out.paths = a.paths.map((p) => p.map((v, i) => (i % 2 === 0 ? v + dx : v + dy)));
+  }
+  if (a.line) {
+    out.line = a.line.map((v, i) => (i % 2 === 0 ? v + dx : v + dy));
+  }
+  return out;
+}
