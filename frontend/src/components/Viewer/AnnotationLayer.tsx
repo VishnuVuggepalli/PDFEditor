@@ -11,7 +11,8 @@ import {
 } from '../../pdf/coords';
 import type { PdfRect, ViewportParams } from '../../pdf/coords';
 import type { PendingAnnotation, PendingFormField, PendingStamp } from '../../state/opsQueue';
-import { shiftAnnotPatch } from '../../state/opsQueue';
+import { moveLineEndpointPatch, resizeAnnotPatch, shiftAnnotPatch } from '../../state/opsQueue';
+import type { Corner } from '../../state/opsQueue';
 import type { AnnotStyle, FieldDraftType, Tool } from '../../state/editorStore';
 import { composeFontToken } from '../../state/editorStore';
 import { Icon } from '../shared/Icon';
@@ -70,7 +71,14 @@ export function AnnotationLayer(props: Props) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [openNote, setOpenNote] = useState<string | null>(null);
   const [editText, setEditText] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ id: string; sx: number; sy: number; dx: number; dy: number } | null>(null);
+  const [drag, setDrag] = useState<{
+    id: string;
+    mode: 'move' | Corner | 'ep0' | 'ep1';
+    sx: number;
+    sy: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
 
   const drawTools: Tool[] = ['highlight', 'comment', 'draw', 'shapes', 'text', 'sign'];
   const placingField = tool === 'forms' && fieldDraft != null;
@@ -81,13 +89,28 @@ export function AnnotationLayer(props: Props) {
   /** Class suffix for draggable pending annotations. */
   const dragClass = canDrag ? ' an-drag' : '';
 
-  /** Live translate offset while a is being dragged. */
+  /** Live translate offset while a is being drag-moved. */
   function dragOffset(id: string): React.CSSProperties {
-    return drag?.id === id ? { transform: `translate(${drag.dx}px, ${drag.dy}px)` } : {};
+    return drag?.id === id && drag.mode === 'move'
+      ? { transform: `translate(${drag.dx}px, ${drag.dy}px)` }
+      : {};
   }
 
-  /** Pointer handlers turning an element into a drag-to-move handle for a. */
-  function dragHandlers(a: PendingAnnotation) {
+  /** Live viewport rect while a is being corner-resized. */
+  function resizePreview(id: string, r: { x: number; y: number; w: number; h: number }) {
+    if (drag?.id !== id || drag.mode === 'move' || drag.mode === 'ep0' || drag.mode === 'ep1') return r;
+    const { mode: c, dx, dy } = drag;
+    let { x, y, w, h } = r;
+    if (c === 'nw' || c === 'sw') { x += dx; w -= dx; }
+    if (c === 'ne' || c === 'se') { w += dx; }
+    if (c === 'nw' || c === 'ne') { y += dy; h -= dy; }
+    if (c === 'sw' || c === 'se') { h += dy; }
+    return { x, y, w: Math.max(6, w), h: Math.max(6, h) };
+  }
+
+  /** Pointer handlers for one drag gesture (move, corner resize, or line
+   * endpoint) on annotation a. */
+  function gestureHandlers(a: PendingAnnotation, mode: 'move' | Corner | 'ep0' | 'ep1') {
     if (!canDrag) return {};
     return {
       // No preventDefault on pointerdown: it would suppress the compat click
@@ -97,7 +120,7 @@ export function AnnotationLayer(props: Props) {
         if (e.button !== 0 || (e.target as HTMLElement).closest('.an-x')) return;
         e.stopPropagation();
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
-        setDrag({ id: a.id, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 });
+        setDrag({ id: a.id, mode, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 });
       },
       onPointerMove: (e: React.PointerEvent) => {
         setDrag((d) => (d && d.id === a.id ? { ...d, dx: e.clientX - d.sx, dy: e.clientY - d.sy } : d));
@@ -107,12 +130,28 @@ export function AnnotationLayer(props: Props) {
         setDrag((d) => {
           if (d && d.id === a.id && (Math.abs(d.dx) > 3 || Math.abs(d.dy) > 3)) {
             // viewport px → PDF points: x same sign, y inverted (PDF y-up)
-            onUpdate(a.id, shiftAnnotPatch(a, d.dx / vp.scale, -d.dy / vp.scale));
+            const dx = d.dx / vp.scale;
+            const dy = -d.dy / vp.scale;
+            if (d.mode === 'move') onUpdate(a.id, shiftAnnotPatch(a, dx, dy));
+            else if (d.mode === 'ep0') onUpdate(a.id, moveLineEndpointPatch(a, 0, dx, dy));
+            else if (d.mode === 'ep1') onUpdate(a.id, moveLineEndpointPatch(a, 1, dx, dy));
+            else onUpdate(a.id, resizeAnnotPatch(a, d.mode, dx, dy));
           }
           return null;
         });
       },
     };
+  }
+
+  /** Backwards-compat alias: body drag = move gesture. */
+  const dragHandlers = (a: PendingAnnotation) => gestureHandlers(a, 'move');
+
+  /** Four corner resize handles for a rect-based pending annotation. */
+  function resizeHandles(a: PendingAnnotation) {
+    if (!canDrag) return null;
+    return (['nw', 'ne', 'sw', 'se'] as const).map((c) => (
+      <span key={c} className={`an-rs ${c}`} {...gestureHandlers(a, c)} />
+    ));
   }
 
   function rel(e: React.MouseEvent): [number, number] {
@@ -282,7 +321,7 @@ export function AnnotationLayer(props: Props) {
     <>
       <div className="annot-render">
         {byType('highlight').map((a) => {
-          const r = pdfRectToViewport(a.rect, vp);
+          const r = resizePreview(a.id, pdfRectToViewport(a.rect, vp));
           return (
             <div
               key={a.id}
@@ -290,6 +329,7 @@ export function AnnotationLayer(props: Props) {
               style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: a.color, ...dragOffset(a.id) }}
               {...dragHandlers(a)}
             >
+              {resizeHandles(a)}
               {!readonly && (
                 <button className="an-x" onClick={() => onRemove(a.id)}>
                   <Icon name="close" size={11} />
@@ -300,7 +340,7 @@ export function AnnotationLayer(props: Props) {
         })}
         {boxKinds.map(({ type, cls }) =>
           byType(type).map((a) => {
-            const r = pdfRectToViewport(a.rect, vp);
+            const r = resizePreview(a.id, pdfRectToViewport(a.rect, vp));
             return (
               <div
                 key={a.id}
@@ -312,6 +352,7 @@ export function AnnotationLayer(props: Props) {
                 }}
                 {...dragHandlers(a)}
               >
+                {resizeHandles(a)}
                 {!readonly && (
                   <button className="an-x" onClick={() => onRemove(a.id)}>
                     <Icon name="close" size={11} />
@@ -367,18 +408,28 @@ export function AnnotationLayer(props: Props) {
             />
           ))}
           {byType('line').map((a) => {
-            const [x1, y1, x2, y2] = lineEnds(a);
+            let [x1, y1, x2, y2] = lineEnds(a);
+            // live endpoint preview while dragging a handle
+            if (drag?.id === a.id && drag.mode === 'ep0') { x1 += drag.dx; y1 += drag.dy; }
+            if (drag?.id === a.id && drag.mode === 'ep1') { x2 += drag.dx; y2 += drag.dy; }
             return (
-              <line
-                key={a.id}
-                className={dragClass.trim()}
-                x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={a.color}
-                strokeWidth={(a.borderWidth ?? 2) * vp.scale}
-                strokeLinecap="round"
-                style={dragOffset(a.id)}
-                {...dragHandlers(a)}
-              />
+              <g key={a.id}>
+                <line
+                  className={dragClass.trim()}
+                  x1={x1} y1={y1} x2={x2} y2={y2}
+                  stroke={a.color}
+                  strokeWidth={(a.borderWidth ?? 2) * vp.scale}
+                  strokeLinecap="round"
+                  style={dragOffset(a.id)}
+                  {...dragHandlers(a)}
+                />
+                {canDrag && (
+                  <>
+                    <circle className="an-ep" cx={x1} cy={y1} r={5} {...gestureHandlers(a, 'ep0')} />
+                    <circle className="an-ep" cx={x2} cy={y2} r={5} {...gestureHandlers(a, 'ep1')} />
+                  </>
+                )}
+              </g>
             );
           })}
           {draft && draft.kind === 'ink' && (

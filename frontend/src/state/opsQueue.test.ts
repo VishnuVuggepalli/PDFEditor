@@ -11,6 +11,8 @@ import {
   reorderPages,
   restorePage,
   rotatePage,
+  moveLineEndpointPatch,
+  resizeAnnotPatch,
   shiftAnnotPatch,
   toAnnotationInputs,
   toNewFormFieldInputs,
@@ -369,5 +371,46 @@ describe('shiftAnnotPatch', () => {
     const p = shiftAnnotPatch(a, 1, 1);
     expect('paths' in p).toBe(false);
     expect('line' in p).toBe(false);
+  });
+});
+
+describe('resizeAnnotPatch', () => {
+  const base: PendingAnnotation = {
+    id: 's1', type: 'square', page: 1, rect: [100, 100, 200, 160], color: '#ff0000',
+  };
+
+  it.each([
+    ['se grows right+down', 'se', 20, -10, [100, 90, 220, 160]],
+    ['nw grows left+up', 'nw', -5, 8, [95, 100, 200, 168]],
+    ['ne moves right edge and top', 'ne', 10, 5, [100, 100, 210, 165]],
+    ['sw moves left edge and bottom', 'sw', 5, -5, [105, 95, 200, 160]],
+  ] as const)('%s', (_n, corner, dx, dy, want) => {
+    expect(resizeAnnotPatch(base, corner, dx, dy).rect).toEqual(want);
+  });
+
+  it('clamps to minimum size instead of inverting', () => {
+    const p = resizeAnnotPatch(base, 'se', -500, 500);
+    const [llx, lly, urx, ury] = p.rect;
+    expect(urx - llx).toBeGreaterThanOrEqual(8);
+    expect(ury - lly).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe('moveLineEndpointPatch', () => {
+  const line: PendingAnnotation = {
+    id: 'l1', type: 'line', page: 1, rect: [8, 8, 102, 32], color: '#16a34a',
+    borderWidth: 2, line: [10, 10, 100, 30],
+  };
+
+  it('moves the first endpoint and recomputes the rect', () => {
+    const p = moveLineEndpointPatch(line, 0, -5, 5);
+    expect(p.line).toEqual([5, 15, 100, 30]);
+    expect(p.rect[0]).toBeLessThan(5);
+    expect(p.rect[2]).toBeGreaterThan(100);
+  });
+
+  it('moves the second endpoint', () => {
+    const p = moveLineEndpointPatch(line, 1, 10, 0);
+    expect(p.line).toEqual([10, 10, 110, 30]);
   });
 });

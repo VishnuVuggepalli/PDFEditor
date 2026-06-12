@@ -260,3 +260,46 @@ export function shiftAnnotPatch(
   }
   return out;
 }
+
+/** Corner identifiers for rect resizing. */
+export type Corner = 'nw' | 'ne' | 'sw' | 'se';
+
+const MIN_SIDE_PT = 8;
+
+/** Patch resizing a rect-based annotation by dragging one corner by
+ * (dx, dy) in PDF points. The opposite corner stays fixed; both sides are
+ * clamped to a minimum so a block can never collapse to nothing. */
+export function resizeAnnotPatch(
+  a: PendingAnnotation,
+  corner: Corner,
+  dx: number,
+  dy: number,
+): { rect: PdfRect } {
+  let [llx, lly, urx, ury] = a.rect;
+  // PDF y-up: the "n" (top) edge is ury, "s" (bottom) is lly.
+  if (corner === 'nw' || corner === 'sw') llx = Math.min(llx + dx, urx - MIN_SIDE_PT);
+  if (corner === 'ne' || corner === 'se') urx = Math.max(urx + dx, llx + MIN_SIDE_PT);
+  if (corner === 'nw' || corner === 'ne') ury = Math.max(ury + dy, lly + MIN_SIDE_PT);
+  if (corner === 'sw' || corner === 'se') lly = Math.min(lly + dy, ury - MIN_SIDE_PT);
+  return { rect: [llx, lly, urx, ury] };
+}
+
+/** Patch moving one endpoint of a line annotation by (dx, dy) in PDF
+ * points; the bounding rect is recomputed with a small padding. */
+export function moveLineEndpointPatch(
+  a: PendingAnnotation,
+  which: 0 | 1,
+  dx: number,
+  dy: number,
+): { rect: PdfRect; line: number[] } {
+  const [x1, y1, x2, y2] = a.line ?? [0, 0, 0, 0];
+  const line = which === 0 ? [x1 + dx, y1 + dy, x2, y2] : [x1, y1, x2 + dx, y2 + dy];
+  const pad = Math.max(2, (a.borderWidth ?? 2) / 2 + 1);
+  const rect: PdfRect = [
+    Math.min(line[0], line[2]) - pad,
+    Math.min(line[1], line[3]) - pad,
+    Math.max(line[0], line[2]) + pad,
+    Math.max(line[1], line[3]) + pad,
+  ];
+  return { rect, line };
+}
